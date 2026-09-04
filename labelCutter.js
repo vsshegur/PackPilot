@@ -556,6 +556,39 @@ function lc_drawCode128(page, font, value, { x, y, width, height }) {
   return true;
 }
 
+function lc_sortPrintItems(items, platform) {
+  const isMulti = item => item.qty > 1 || (item.sku && item.sku.includes('+'));
+  const entries = items.map((item, originalIndex) => {
+    const sortInfo = typeof window.getSkuSortInfo === 'function'
+      ? window.getSkuSortInfo(platform, item.sku)
+      : { mapped: false, masterKey: String(item.sku || '').trim().toUpperCase(), childIndex: Number.MAX_SAFE_INTEGER };
+    return { item, originalIndex, sortInfo };
+  });
+  const textCompare = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
+  const normalCompare = (a, b) => {
+    const courierCompare = textCompare(a.item.courier, b.item.courier);
+    if (courierCompare !== 0) return courierCompare;
+    const skuCompare = textCompare(a.item.sku, b.item.sku);
+    return skuCompare !== 0 ? skuCompare : a.originalIndex - b.originalIndex;
+  };
+
+  const mapped = entries.filter(entry => entry.sortInfo.mapped).sort((a, b) => {
+    const masterCompare = textCompare(a.sortInfo.masterKey, b.sortInfo.masterKey);
+    if (masterCompare !== 0) return masterCompare;
+    const childCompare = Number(a.sortInfo.childIndex) - Number(b.sortInfo.childIndex);
+    if (childCompare !== 0) return childCompare;
+    const quantityCompare = Number(isMulti(a.item)) - Number(isMulti(b.item));
+    if (quantityCompare !== 0) return quantityCompare;
+    const courierCompare = textCompare(a.item.courier, b.item.courier);
+    return courierCompare !== 0 ? courierCompare : a.originalIndex - b.originalIndex;
+  });
+
+  const unmapped = entries.filter(entry => !entry.sortInfo.mapped);
+  const unmappedSingles = unmapped.filter(entry => !isMulti(entry.item)).sort(normalCompare);
+  const unmappedMulti = unmapped.filter(entry => isMulti(entry.item)).sort(normalCompare);
+  return [...mapped, ...unmappedSingles, ...unmappedMulti].map(entry => entry.item);
+}
+
 async function lc_generatePdf({ progressStart = 0 } = {}) {
   const { PDFDocument, rgb, StandardFonts } = PDFLib; 
   await lc_logoReadyPromise;
@@ -602,13 +635,7 @@ async function lc_generatePdf({ progressStart = 0 } = {}) {
       } catch(e) { console.error("Logo Error Bypassed:", e); }
   }
 
-  const isMulti = item => (item.qty > 1 || (item.sku && item.sku.includes('+'))); 
-  const sortFn = (a, b) => { 
-      const cComp = (a.courier||'').localeCompare(b.courier||''); 
-      if (cComp !== 0) return cComp; 
-      return (a.sku||'').localeCompare(b.sku||''); 
-  };
-  const sortedData = [...lc_parsedData.filter(i => !isMulti(i)).sort(sortFn), ...lc_parsedData.filter(i => isMulti(i)).sort(sortFn)];
+  const sortedData = lc_sortPrintItems(lc_parsedData, currentPlatform);
 
   for (let i = 0; i < sortedData.length; i++) {
       
