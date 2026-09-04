@@ -3,6 +3,7 @@ import { corsHeaders, jsonResponse, requireFirebaseUser, type FirebaseUser } fro
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const firebaseProjectId = Deno.env.get('FIREBASE_PROJECT_ID') || '';
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
@@ -23,8 +24,34 @@ function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-async function canReadSeller(user: FirebaseUser, sellerUid: string) {
+function firestoreString(fields: Record<string, { stringValue?: string }> | undefined, key: string) {
+  return String(fields?.[key]?.stringValue || '');
+}
+
+async function hasAcceptedManagerInvite(
+  request: Request,
+  sellerUid: string,
+  managerEmail: string,
+  acceptedUid = ''
+) {
+  if (!firebaseProjectId || !validEmail(managerEmail)) return false;
+  const authorization = request.headers.get('authorization') || '';
+  const path = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/managerInvites/${encodeURIComponent(managerEmail)}`;
+  const response = await fetch(path, { headers: { Authorization: authorization } });
+  if (response.status === 404 || response.status === 403) return false;
+  if (!response.ok) throw new Error('The manager invitation could not be verified with Firebase.');
+  const document = await response.json();
+  const fields = document?.fields as Record<string, { stringValue?: string }> | undefined;
+  return firestoreString(fields, 'ownerUid') === sellerUid
+    && firestoreString(fields, 'managerEmail') === managerEmail
+    && firestoreString(fields, 'status') === 'accepted'
+    && (!acceptedUid || firestoreString(fields, 'acceptedUid') === acceptedUid);
+}
+
+async function canReadSeller(request: Request, user: FirebaseUser, sellerUid: string) {
   if (user.uid === sellerUid) return true;
+  const accepted = await hasAcceptedManagerInvite(request, sellerUid, user.email, user.uid);
+  if (!accepted) return false;
   const { data, error } = await admin
     .from('seller_managers')
     .select('seller_uid')
@@ -63,6 +90,14 @@ Deno.serve(async request => {
     const sellerUid = String(input.sellerUid || '');
     if (!sellerUid) return jsonResponse({ error: 'Seller workspace is missing.' }, 400, cors);
 
+    if (action === 'manager-accept') {
+      const accepted = await hasAcceptedManagerInvite(request, sellerUid, user.email, user.uid);
+      if (!accepted) return jsonResponse({ error: 'Accept the Seller invitation before opening shared PDFs.' }, 403, cors);
+      const { error } = await admin.from('seller_managers').upsert({ seller_uid: sellerUid, manager_email: user.email });
+      if (error) throw error;
+      return jsonResponse({ ok: true }, 200, cors);
+    }
+
     if (action === 'manager-upsert' || action === 'manager-remove') {
       if (user.uid !== sellerUid) return jsonResponse({ error: 'Only the Seller can change manager access.' }, 403, cors);
       const managerEmail = String(input.managerEmail || '').trim().toLowerCase();
@@ -70,6 +105,8 @@ Deno.serve(async request => {
         return jsonResponse({ error: 'Enter a different valid manager email.' }, 400, cors);
       }
       if (action === 'manager-upsert') {
+        const accepted = await hasAcceptedManagerInvite(request, sellerUid, managerEmail);
+        if (!accepted) return jsonResponse({ error: 'The manager must accept the invitation before PDF access starts.' }, 403, cors);
         const { error } = await admin.from('seller_managers').upsert({ seller_uid: sellerUid, manager_email: managerEmail });
         if (error) throw error;
       } else {
@@ -136,7 +173,7 @@ Deno.serve(async request => {
       return jsonResponse({ ok: true, id, expiresAt: expiresAt.getTime() }, 201, cors);
     }
 
-    const mayRead = await canReadSeller(user, sellerUid);
+    const mayRead = await canReadSeller(request, user, sellerUid);
     if (!mayRead) return jsonResponse({ error: 'You do not have access to this Seller’s PDFs.' }, 403, cors);
 
     if (action === 'list') {
