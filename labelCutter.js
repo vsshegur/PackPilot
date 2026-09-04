@@ -288,7 +288,7 @@ async function lc_extract(page, platform) {
   const v = page.view; 
   const pdfW = v[2] - v[0]; 
   const pdfH = v[3] - v[1];
-  let splitY = 0; let fkGstin = null; let msGap = null; let isStandaloneLabel = false; let soldBy = 'Unknown Seller';
+  let splitY = 0; let fkGstin = null; let fkMasterBox = null; let msGap = null; let isStandaloneLabel = false; let soldBy = 'Unknown Seller';
 
   const midMarker = lines.find(l => { 
       const y = l.y; 
@@ -340,6 +340,28 @@ async function lc_extract(page, platform) {
   const aB = lc_getBounds(lines, 0, pdfH);
   fullBox = { left: isFinite(aB.minX) ? Math.max(0, aB.minX - padX) : 10, right: isFinite(aB.maxX) ? Math.min(pdfW, aB.maxX + padX) : pdfW - 10, bottom: isFinite(aB.minY) ? Math.max(0, aB.minY - padY) : 10, top: isFinite(aB.maxY) ? Math.min(pdfH, aB.maxY + padY) : pdfH - 10 };
 
+  if (platform === 'flipkart') {
+      const productHeader = lines.find(line => /SKU\s*ID\s*\|?\s*Description/i.test(line.text));
+      const lowerBarcodeLine = productHeader
+        ? lines.find(line => line.y < productHeader.y - 8 && /\bFMP[A-Z0-9]{8,}\b/i.test(line.text))
+        : null;
+      if (productHeader && lowerBarcodeLine) {
+          const productLines = lines.filter(line => line.y < productHeader.y - 2 && line.y > lowerBarcodeLine.y + 3);
+          const lowestProductLine = productLines.length
+            ? productLines.reduce((lowest, line) => line.y < lowest.y ? line : lowest)
+            : null;
+          const barcodeTextHeight = Math.max(0, ...lowerBarcodeLine.items.map(item => Number(item.height) || 0));
+          const qtyHeaderItem = productHeader.items.find(item => /^QTY$/i.test(String(item.str || '').trim()));
+          const boxBottom = lowerBarcodeLine.y + barcodeTextHeight + 10;
+          const boxTop = lowestProductLine ? lowestProductLine.y - 5 : productHeader.y - 18;
+          const boxLeft = lBox.left + 10;
+          const boxRight = qtyHeaderItem ? qtyHeaderItem.x - 5 : lBox.right - 10;
+          if (boxRight - boxLeft >= 80 && boxTop - boxBottom >= 12) {
+              fkMasterBox = { x: boxLeft, y: boxBottom, w: boxRight - boxLeft, h: boxTop - boxBottom };
+          }
+      }
+  }
+
   if (platform === 'meesho') {
       let headerLine = lines.find(l => /IF UNDELIVERED|RETURN TO/i.test(l.text)); 
       let productLine = lines.find(l => /PRODUCT DETAILS|SKU SIZE QTY/i.test(l.text)); 
@@ -373,7 +395,7 @@ async function lc_extract(page, platform) {
       barcodeText = parseMeeshoBarcode(lines, fullText);
   }
   
-  return { pdfW, pdfH, splitY, lBox, iBox, fullBox, fkGstin, msGap, sku, qty, courier, soldBy, barcodeText, rawText: fullText };
+  return { pdfW, pdfH, splitY, lBox, iBox, fullBox, fkGstin, fkMasterBox, msGap, sku, qty, courier, soldBy, barcodeText, rawText: fullText };
 }
 
 function lc_readFile(file) { 
@@ -420,7 +442,7 @@ document.getElementById('lc_processBtn').addEventListener('click', async () => {
                   fileIndex: fIdx, pageIndex: pIdx - 1,
                   w: data.pdfW, h: data.pdfH, splitY: data.splitY,
                   lBox: data.lBox, iBox: data.iBox, fullBox: data.fullBox,
-                  fkPos: data.fkGstin, msPos: data.msGap,
+                  fkPos: data.fkGstin, fkMasterPos: data.fkMasterBox, msPos: data.msGap,
                   sku: data.sku, qty: data.qty, courier: data.courier, soldBy: data.soldBy,
                   barcodeText: data.barcodeText, rawText: data.rawText
               });
@@ -490,6 +512,25 @@ function lc_fitText(text, font, size, maxWidth) {
   let shortened = value;
   while (shortened.length > 3 && font.widthOfTextAtSize(`${shortened}…`, size) > maxWidth) shortened = shortened.slice(0, -1);
   return `${shortened}…`;
+}
+
+function lc_drawFlipkartMasterSku(page, font, item, embBox, xOff, yOff, scale) {
+  if (currentPlatform !== 'flipkart' || !item.fkMasterPos || typeof window.getSkuSortInfo !== 'function') return;
+  const mapping = window.getSkuSortInfo('flipkart', item.sku);
+  if (!mapping?.mapped || !mapping.masterSku) return;
+
+  const { rgb } = PDFLib;
+  const box = item.fkMasterPos;
+  const x = xOff + ((box.x - embBox.left) * scale);
+  const y = yOff + ((box.y - embBox.bottom) * scale);
+  const width = box.w * scale;
+  const height = box.h * scale;
+  const fontSize = Math.min(11, Math.max(7, 9 * scale));
+  const text = lc_fitText(`MASTER SKU: ${mapping.masterSku}`, font, fontSize, Math.max(20, width - 6));
+  const textY = y + Math.max(2, (height - fontSize) / 2);
+
+  page.drawRectangle({ x, y: y + 1, width, height: Math.max(1, height - 2), color: rgb(1, 1, 1) });
+  page.drawText(text, { x: x + 3, y: textY, size: fontSize, font, color: rgb(0, 0, 0) });
 }
 
 function lc_findStore(item) {
@@ -722,6 +763,7 @@ async function lc_generatePdf({ progressStart = 0 } = {}) {
           const xOff = margin + (sw - (embW*scale)) / 2; const yOff = margin + (sh - (embH*scale)) / 2;
           p1.drawPage(embedded, { x: xOff, y: yOff, xScale: scale, yScale: scale });
           lc_drawBrandLogo(p1, logo, item, embBox, xOff, yOff, scale);
+          lc_drawFlipkartMasterSku(p1, font, item, embBox, xOff, yOff, scale);
           if (isMs) p1.drawLine({ start: { x: xOff, y: yOff }, end: { x: xOff + (embW * scale), y: yOff }, thickness: 1.1, color: rgb(0,0,0) });
           if (incInv && item.iBox) {
               const embeddedInv = await outDoc.embedPage(srcPage, item.iBox); 
