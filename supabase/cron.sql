@@ -2,8 +2,8 @@ create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
 -- Replace both placeholder values before running this file.
-select vault.create_secret('https://YOUR_PROJECT_REF.supabase.co', 'dispatch_project_url');
-select vault.create_secret('REPLACE_WITH_THE_SAME_LONG_CLEANUP_SECRET', 'dispatch_cleanup_secret');
+select vault.create_secret('https://gxaxbteomdeduaoiwfpn.supabase.co', 'dispatch_project_url');
+select vault.create_secret('HSMSNRLbp6eZ5CPlupzFMmBAsWqZwLeP', 'dispatch_cleanup_secret');
 
 select cron.schedule(
   'delete-expired-seller-pdfs',
