@@ -2168,6 +2168,11 @@ td.number {
   color: var(--warning);
 }
 
+.status-badge--muted {
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+
 .mobile-nav,
 .mobile-menu-button,
 .mobile-menu-backdrop {
@@ -2193,6 +2198,94 @@ td.number {
   padding: 20px;
   backdrop-filter: blur(8px);
 }
+
+.invitation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  overflow-y: auto;
+  place-items: center;
+  background: rgba(7, 15, 27, 0.68);
+  padding: 22px;
+  backdrop-filter: blur(10px);
+}
+
+body.invitation-open {
+  overflow: hidden;
+}
+
+.invitation-card {
+  width: min(100%, 610px);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  padding: clamp(26px, 5vw, 42px);
+}
+
+.invitation-icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 20px;
+  place-items: center;
+  border-radius: 17px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font: 800 1.25rem "Manrope", sans-serif;
+}
+
+.invitation-card h2 {
+  margin: 7px 0 10px;
+  font: 800 clamp(1.65rem, 4vw, 2.25rem)/1.15 "Manrope", sans-serif;
+  letter-spacing: -.04em;
+}
+
+.invitation-card > p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.invitation-warning {
+  margin: 20px 0 0;
+  border: 1px solid rgba(220, 104, 3, .28);
+  border-radius: 15px;
+  background: var(--warning-soft);
+  padding: 15px 17px;
+}
+
+.invitation-warning strong,
+.invitation-warning p {
+  display: block;
+  margin: 0;
+}
+
+.invitation-warning strong { color: var(--warning); }
+.invitation-warning p { margin-top: 4px; color: var(--ink-soft); font-size: .82rem; line-height: 1.55; }
+
+.invitation-permissions {
+  display: grid;
+  gap: 10px;
+  margin: 22px 0;
+  border-block: 1px solid var(--line);
+  padding: 20px 0;
+}
+
+.invitation-permissions span {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ink-soft);
+  font-size: .86rem;
+  font-weight: 700;
+}
+
+.invitation-permissions b { color: var(--success); }
+.invitation-permissions .denied b { color: var(--danger); }
+.invitation-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.invitation-footnote { margin-top: 14px !important; font-size: .73rem; text-align: right; }
 
 .processing-card {
   width: min(100%, 430px);
@@ -3296,6 +3389,29 @@ body:has(#authPanel:not(.hidden)) .topbar .mobile-brand {
 .cloud-policy > span { display: grid; width: 48px; height: 48px; flex: 0 0 48px; place-items: center; border-radius: 14px; background: var(--brand); color: #fff; font: 800 1rem "Manrope",sans-serif; }
 .cloud-policy strong, .cloud-policy p { display: block; margin: 0; }
 .cloud-policy p { margin-top: 3px; color: var(--muted); font-size: .82rem; }
+.manager-pdf-intro {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(7, 148, 85, .22);
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--success-soft), var(--surface));
+  padding: 18px 20px;
+}
+.manager-pdf-intro > span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--success);
+  padding: 7px 10px;
+  color: #fff;
+  font-size: .7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.manager-pdf-intro strong, .manager-pdf-intro p { display: block; margin: 0; }
+.manager-pdf-intro p { margin-top: 3px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
 .cloud-list { display: grid; gap: 0; }
 .cloud-item { display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); padding: 16px 0; }
 .cloud-item:last-child { border-bottom: 0; }
@@ -3310,6 +3426,10 @@ body:has(#authPanel:not(.hidden)) .topbar .mobile-brand {
 .invite-form .field { min-width: 280px; }
 
 .status-badge--pink { background: rgba(244,51,151,.1); color: #d61f7d; }
+
+body.operation-manager-mode .content { width: min(100%, 1040px); }
+body.operation-manager-mode .topbar { padding-inline: clamp(18px, 5vw, 70px); }
+body.operation-manager-mode #cloudLibraryWorkspace { max-width: 960px; margin-inline: auto; }
 
 /* Private Seller dashboard */
 .dashboard-heading { align-items: center; }
@@ -3650,4 +3770,10 @@ body:has(#authPanel:not(.hidden)) .topbar .mobile-brand {
   .dashboard-privacy { align-items: flex-start; flex-direction: column; }
   .dashboard-kpi-grid { grid-template-columns: 1fr; }
   .private-account-pill { white-space: normal; }
+  .invitation-overlay { align-items: end; padding: 10px; }
+  .invitation-card { border-radius: 22px; padding: 24px 20px; }
+  .invitation-actions { align-items: stretch; flex-direction: column-reverse; }
+  .invitation-actions .button { width: 100%; }
+  .invitation-footnote { text-align: left; }
+  .manager-pdf-intro { align-items: flex-start; flex-direction: column; }
 }
