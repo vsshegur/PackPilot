@@ -361,14 +361,14 @@
         </section>
 
         <section id="skuMasterWorkspace" class="workspace hidden seller-only" aria-labelledby="skuMasterHeading">
-          <div class="workspace-heading"><div><span class="eyebrow">Packing identity &amp; cost memory</span><h2 id="skuMasterHeading">Master and child SKUs</h2><p>Group different listing SKUs that use the same physical product. Flipkart and Meesho mappings are always kept separate.</p></div><span id="sku_count" class="count-badge">0 masters</span></div>
+          <div class="workspace-heading"><div><span class="eyebrow">Packing identity &amp; cost memory</span><h2 id="skuMasterHeading">Master and child SKUs</h2><p>Group different listing SKUs that use the same physical product and control the sequence in which their labels print. Flipkart and Meesho mappings stay separate.</p></div><span id="sku_count" class="count-badge">0 masters</span></div>
           <div class="sku-example"><span>Example</span><strong>Elite-Ten-12x18</strong><i>contains</i><code>TEN-ELITE-1218</code><code>TEN-ELITE-1218XHJ</code><code>TEN-ELITE-1218KL</code></div>
           <section class="panel sku-editor">
-            <div class="panel-heading"><div><span class="step-number">+</span><div><h3>Add or update a master SKU</h3><p>Paste any number of child SKUs, one per line or separated by commas.</p></div></div></div>
+            <div class="panel-heading"><div><span class="step-number">+</span><div><h3>Add or update a master SKU</h3><p>Enter child SKUs in your preferred packing order. Their labels will print together in this exact sequence.</p></div></div></div>
             <div class="sku-master-form">
               <label class="field"><span>Master SKU name</span><input id="sku_master" type="text" maxlength="120" placeholder="Elite-Ten-12x18"></label>
               <label class="field"><span>Marketplace</span><select id="sku_marketplace"><option value="meesho">Meesho</option><option value="flipkart">Flipkart</option></select></label>
-              <label class="field field--children"><span>Child SKU names</span><textarea id="sku_children" rows="5" maxlength="5000" placeholder="TEN-ELITE-1218&#10;TEN-ELITE-1218XHJ&#10;TEN-ELITE-1218KL"></textarea><small>Exact names from shipping labels. Duplicate child SKUs in the same marketplace are prevented.</small></label>
+              <label class="field field--children"><span>Child SKU names · sorting order</span><textarea id="sku_children" rows="5" maxlength="5000" placeholder="TEN-ELITE-1218&#10;TEN-ELITE-1218XHJ&#10;TEN-ELITE-1218KL"></textarea><small>First line prints first, then the second and third—alphabetical order is ignored. Use exact shipping-label names.</small></label>
               <div class="sku-cost-grid">
                 <label class="field"><span>Product cost incl. GST (₹)</span><input id="sku_productCost" type="number" min="0" step="0.01" placeholder="250"></label>
                 <label class="field"><span>Packaging / unit (₹)</span><input id="sku_packagingCost" type="number" min="0" step="0.01" placeholder="12"></label>
@@ -378,7 +378,7 @@
               <div class="sku-save-row"><p id="sku_message" class="setting-feedback" aria-live="polite"></p><button id="sku_saveBtn" class="button button--primary" type="button">Save master SKU</button></div>
             </div>
           </section>
-          <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Saved master mappings</h3><p>Single-quantity child labels roll up to the master in packing summaries. Multi-quantity rows remain under the original child SKU.</p></div><label class="field compact-search"><span class="sr-only">Search master or child SKUs</span><input id="sku_search" type="search" placeholder="Search master or child SKU"></label></div><div class="table-scroll"><table><thead><tr><th>Master SKU</th><th>Marketplace</th><th>Child SKUs</th><th class="number">Product</th><th class="number">Packing</th><th class="number">Labour</th><th class="number">Total / unit</th><th></th></tr></thead><tbody id="sku_body"></tbody></table></div><div id="sku_empty" class="empty-state">No master SKU mappings saved yet. Packing summaries will continue showing the original label SKUs.</div></section>
+          <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Saved master mappings</h3><p>Numbered child SKUs show their label-printing order. Single-quantity rows roll up to the Master SKU in the summary; multi-quantity summary rows keep the child SKU.</p></div><label class="field compact-search"><span class="sr-only">Search master or child SKUs</span><input id="sku_search" type="search" placeholder="Search master or child SKU"></label></div><div class="table-scroll"><table><thead><tr><th>Master SKU</th><th>Marketplace</th><th>Child SKUs · print order</th><th class="number">Product</th><th class="number">Packing</th><th class="number">Labour</th><th class="number">Total / unit</th><th></th></tr></thead><tbody id="sku_body"></tbody></table></div><div id="sku_empty" class="empty-state">No master SKU mappings saved yet. Label and summary sorting will continue using the original SKUs.</div></section>
         </section>
 
         <section id="marginWorkspace" class="workspace hidden seller-only" aria-labelledby="marginHeading">
