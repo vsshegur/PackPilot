@@ -49,7 +49,16 @@ export async function cloudGateway(action, payload = {}) {
 
   const headers = { Authorization: `Bearer ${token}` };
   if (!isForm) headers['Content-Type'] = 'application/json';
-  const response = await fetch(endpoint, { method: 'POST', headers, body });
+
+  let response;
+  try {
+    response = await fetch(endpoint, { method: 'POST', headers, body });
+  } catch (error) {
+    console.error('Cloud gateway network error:', error);
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'the website origin';
+    throw new Error(`Supabase could not be reached. Deploy the pdf-gateway function and add ${origin} to its ALLOWED_ORIGINS secret.`);
+  }
+
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || `Cloud request failed (${response.status}).`);
   return result;
