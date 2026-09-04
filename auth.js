@@ -13,7 +13,8 @@ import {
   setDoc,
   updateDoc,
   collection,
-  getDocs
+  getDocs,
+  onSnapshot
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 const ADMIN_EMAIL = 'vsshegur@gmail.com';
@@ -33,6 +34,8 @@ const APP_META = {
 const el = id => document.getElementById(id);
 const workspaceIds = ['dashboardWorkspace', 'labelWorkspace', 'fkPnlWorkspace', 'meeshoPnlWorkspace', 'settlementWorkspace', 'skuMasterWorkspace', 'marginWorkspace', 'cloudLibraryWorkspace', 'teamWorkspace', 'settingsWorkspace', 'adminPanel'];
 const fallbackAvatar = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" rx="20" fill="#eef2ff"/><circle cx="40" cy="31" r="14" fill="#818cf8"/><path d="M17 71c2-16 11-24 23-24s21 8 23 24" fill="#4f46e5"/></svg>')}`;
+let managerInviteUnsubscribe = null;
+let managerInviteRefreshActive = false;
 
 window.appState = {
   userSkus: {},
@@ -46,6 +49,7 @@ window.appState = {
   userPlan: {},
   role: null,
   ownerUid: null,
+  ownerEmail: null,
   workspaceUid: null,
   skuMaster: {}
 };
@@ -56,14 +60,66 @@ function isOperationsManager() {
 
 function applyRoleUi() {
   const manager = isOperationsManager();
+  document.body.classList.toggle('operation-manager-mode', manager);
   document.querySelectorAll('.seller-only').forEach(node => node.classList.toggle('role-hidden', manager));
   document.querySelectorAll('.seller-cloud-only').forEach(node => node.classList.toggle('role-hidden', window.appState.role !== 'seller'));
+  document.querySelectorAll('.manager-only').forEach(node => node.classList.toggle('role-hidden', !manager));
   const description = el('cloudRoleDescription');
   if (description) {
     description.textContent = manager
-      ? "Only active PDFs shared by your Seller are shown here."
+      ? 'Only active PDFs explicitly shared by your Seller are shown here.'
       : 'Ready-to-print files are available to your operations team for six hours only.';
   }
+  const ownerDescription = el('cloud_managerOwner');
+  if (ownerDescription && manager) {
+    const owner = window.appState.ownerEmail || 'your Seller';
+    ownerDescription.textContent = `Only PDFs explicitly shared by ${owner} appear here. You cannot open labels, reports, settings, or any other Seller data.`;
+  }
+}
+
+function requestManagerInvitationDecision(invitation, existingSeller) {
+  const dialog = el('managerInviteDialog');
+  const accept = el('managerInviteAccept');
+  const reject = el('managerInviteReject');
+  const seller = invitation.ownerName || invitation.ownerEmail || 'A PackPilot Seller';
+  el('managerInviteSeller').textContent = seller;
+  el('managerInviteSellerWarning').classList.toggle('hidden', !existingSeller);
+  reject.textContent = existingSeller ? 'Reject and stay Seller' : 'Reject invitation';
+  dialog.classList.remove('hidden');
+  document.body.classList.add('invitation-open');
+
+  return new Promise(resolve => {
+    const finish = decision => {
+      dialog.classList.add('hidden');
+      document.body.classList.remove('invitation-open');
+      accept.onclick = null;
+      reject.onclick = null;
+      resolve(decision);
+    };
+    accept.onclick = () => finish('accepted');
+    reject.onclick = () => finish('rejected');
+  });
+}
+
+function watchManagerInvitation(user) {
+  if (managerInviteUnsubscribe) managerInviteUnsubscribe();
+  managerInviteUnsubscribe = null;
+  const emailKey = String(user?.email || '').trim().toLowerCase();
+  if (!emailKey || user.email === ADMIN_EMAIL) return;
+  managerInviteUnsubscribe = onSnapshot(doc(db, 'managerInvites', emailKey), snapshot => {
+    const invite = snapshot.exists() ? snapshot.data() : null;
+    const pending = invite?.managerEmail === emailKey && invite.status === 'pending';
+    const managerAccessEnded = isOperationsManager()
+      && (!invite || invite.status !== 'accepted' || invite.acceptedUid !== user.uid);
+    if ((!pending && !managerAccessEnded) || managerInviteRefreshActive) return;
+    managerInviteRefreshActive = true;
+    handleSignedInUser(user).catch(error => {
+      console.error(error);
+      alert(`Your account access could not be refreshed: ${error.message}`);
+    }).finally(() => {
+      managerInviteRefreshActive = false;
+    });
+  }, error => console.warn('Manager invitations could not be watched.', error));
 }
 
 function setTheme(theme) {
@@ -83,8 +139,9 @@ el('themeToggle').addEventListener('click', () => {
 });
 
 function setAppChrome(visible) {
-  el('appSidebar').classList.toggle('hidden', !visible);
-  el('mobileMenuBtn').classList.toggle('hidden', !visible);
+  const manager = visible && isOperationsManager();
+  el('appSidebar').classList.toggle('hidden', !visible || manager);
+  el('mobileMenuBtn').classList.toggle('hidden', !visible || manager);
   el('pageIdentity').classList.toggle('hidden', !visible);
   if (!visible) closeMobileMenu();
 }
@@ -172,6 +229,9 @@ document.querySelectorAll('[data-app]').forEach(button => {
 el('openSettingsBtn').addEventListener('click', () => navigateApp(isOperationsManager() ? 'cloudLibrary' : 'settings'));
 
 function resetSignedOutView() {
+  if (managerInviteUnsubscribe) managerInviteUnsubscribe();
+  managerInviteUnsubscribe = null;
+  managerInviteRefreshActive = false;
   window.appState.currentUser = null;
   window.appState.userSkus = {};
   window.appState.storeLinks = [];
@@ -182,8 +242,11 @@ function resetSignedOutView() {
   window.appState.currentApp = 'labelCutter';
   window.appState.role = null;
   window.appState.ownerUid = null;
+  window.appState.ownerEmail = null;
   window.appState.workspaceUid = null;
   window.appState.skuMaster = {};
+  document.body.classList.remove('operation-manager-mode', 'invitation-open');
+  el('managerInviteDialog').classList.add('hidden');
   workspaceIds.forEach(id => el(id).classList.add('hidden'));
   el('authPanel').classList.remove('hidden');
   el('authWarning').classList.remove('hidden');
@@ -257,40 +320,62 @@ async function handleSignedInUser(user) {
     inviteRef ? getDoc(inviteRef) : Promise.resolve(null)
   ]);
   const invitation = inviteSnap?.exists() ? inviteSnap.data() : null;
-  const invitedManager = invitation && invitation.status !== 'revoked' && invitation.managerEmail === emailKey;
+  const matchingInvitation = invitation && invitation.managerEmail === emailKey ? { ...invitation } : null;
   const newUser = {
     email: user.email,
     name: user.displayName || 'User',
     photo: user.photoURL || '',
-    role: user.email === ADMIN_EMAIL ? 'platform_super_admin' : (invitedManager ? 'operations_manager' : 'seller'),
-    ownerUid: invitedManager ? invitation.ownerUid : user.uid,
+    role: user.email === ADMIN_EMAIL ? 'platform_super_admin' : 'seller',
+    ownerUid: user.uid,
     planType: 'Free Trial',
     createdAt: Date.now(),
     expiresAt: Date.now() + (2 * 24 * 60 * 60 * 1000),
     isActive: true
   };
   const userData = userSnap.exists() ? { ...userSnap.data() } : newUser;
+  const existingSeller = userSnap.exists() && ['user', 'seller', 'seller_owner'].includes(userData.role);
+  let acceptedManager = Boolean(
+    matchingInvitation
+    && matchingInvitation.status === 'accepted'
+    && matchingInvitation.acceptedUid === user.uid
+  );
+
+  if (user.email !== ADMIN_EMAIL && matchingInvitation?.status === 'pending') {
+    const decision = await requestManagerInvitationDecision(matchingInvitation, existingSeller);
+    if (decision === 'accepted') {
+      await setDoc(inviteRef, {
+        status: 'accepted',
+        acceptedUid: user.uid,
+        acceptedAt: Date.now(),
+        updatedAt: Date.now()
+      }, { merge: true });
+      matchingInvitation.status = 'accepted';
+      matchingInvitation.acceptedUid = user.uid;
+      acceptedManager = true;
+    } else {
+      await setDoc(inviteRef, {
+        status: 'rejected',
+        acceptedUid: user.uid,
+        acceptedAt: 0,
+        updatedAt: Date.now()
+      }, { merge: true });
+      matchingInvitation.status = 'rejected';
+      acceptedManager = false;
+    }
+  }
 
   if (user.email === ADMIN_EMAIL) {
     userData.role = 'platform_super_admin';
     userData.ownerUid = user.uid;
-  } else if (invitedManager) {
+  } else if (acceptedManager) {
     userData.role = 'operations_manager';
-    userData.ownerUid = invitation.ownerUid;
+    userData.ownerUid = matchingInvitation.ownerUid;
   } else if (userData.role === 'operations_manager') {
-    throw new Error('Your Operations Manager invitation is no longer active. Ask the Seller to invite this email again.');
+    userData.role = 'seller';
+    userData.ownerUid = user.uid;
   } else {
     userData.role = 'seller';
     userData.ownerUid = user.uid;
-  }
-
-  if (invitedManager && inviteRef) {
-    await setDoc(inviteRef, {
-      status: 'accepted',
-      acceptedUid: user.uid,
-      acceptedAt: Date.now(),
-      updatedAt: Date.now()
-    }, { merge: true });
   }
 
   const profileUpdate = {
@@ -317,7 +402,16 @@ async function handleSignedInUser(user) {
   window.appState.currentUser = user;
   window.appState.role = userData.role;
   window.appState.ownerUid = userData.ownerUid || user.uid;
+  window.appState.ownerEmail = acceptedManager ? (matchingInvitation.ownerEmail || '') : user.email;
   window.appState.workspaceUid = userData.ownerUid || user.uid;
+
+  if (acceptedManager) {
+    try {
+      await cloudGateway('manager-accept', { sellerUid: userData.ownerUid });
+    } catch (error) {
+      console.warn('Manager PDF access could not be activated yet.', error);
+    }
+  }
   const avatar = el('userAvatar');
   avatar.src = user.photoURL || fallbackAvatar;
   avatar.alt = user.displayName ? `${user.displayName}'s profile` : 'Account profile';
@@ -363,11 +457,13 @@ if (auth && db && provider) {
       resetSignedOutView();
       return;
     }
-    handleSignedInUser(user).catch(error => {
-      console.error(error);
-      resetSignedOutView();
-      alert(`Could not open your account: ${error.message}`);
-    });
+    handleSignedInUser(user)
+      .then(() => watchManagerInvitation(user))
+      .catch(error => {
+        console.error(error);
+        resetSignedOutView();
+        alert(`Could not open your account: ${error.message}`);
+      });
   });
 
   signInButton.addEventListener('click', async () => {
