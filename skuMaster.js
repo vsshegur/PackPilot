@@ -79,6 +79,28 @@ function publishRecords() {
     ));
     return match?.masterSku || String(childSku || '').trim();
   };
+  window.getSkuSortInfo = (platform, childSku) => {
+    const source = normalizedSku(childSku);
+    const market = normalizedPlatform(platform);
+    const match = records.find(record => record.marketplace === market && (
+      normalizedSku(record.masterSku) === source || record.childSkus.some(child => normalizedSku(child) === source)
+    ));
+    if (!match) {
+      return {
+        mapped: false,
+        masterSku: String(childSku || '').trim(),
+        masterKey: source,
+        childIndex: Number.MAX_SAFE_INTEGER
+      };
+    }
+    const savedChildIndex = match.childSkus.findIndex(child => normalizedSku(child) === source);
+    return {
+      mapped: true,
+      masterSku: match.masterSku,
+      masterKey: normalizedSku(match.masterSku),
+      childIndex: savedChildIndex >= 0 ? savedChildIndex : -1
+    };
+  };
   window.getSkuCostBreakdown = (platform, sku) => {
     const source = normalizedSku(sku);
     const market = normalizedPlatform(platform);
@@ -141,9 +163,9 @@ function renderSkuMaster() {
     marketCell.appendChild(marketBadge);
     const children = document.createElement('div');
     children.className = 'child-sku-list';
-    record.childSkus.forEach(child => {
+    record.childSkus.forEach((child, index) => {
       const chip = document.createElement('code');
-      chip.textContent = child;
+      chip.textContent = `${index + 1}. ${child}`;
       children.appendChild(chip);
     });
     childrenCell.appendChild(children);
@@ -277,7 +299,7 @@ el('sku_saveBtn').addEventListener('click', async () => {
     ['sku_master', 'sku_children', 'sku_productCost', 'sku_packagingCost', 'sku_labourCost', 'sku_price'].forEach(id => { el(id).value = ''; });
     delete el('sku_master').dataset.editId;
     el('sku_marketplace').value = 'meesho';
-    el('sku_message').textContent = `${masterSku} now groups ${childSkus.length} ${marketplace === 'meesho' ? 'Meesho' : 'Flipkart'} child SKU${childSkus.length === 1 ? '' : 's'}.`;
+    el('sku_message').textContent = `${masterSku} now groups ${childSkus.length} ${marketplace === 'meesho' ? 'Meesho' : 'Flipkart'} child SKU${childSkus.length === 1 ? '' : 's'} in the saved label-sorting order.`;
   } catch (error) {
     el('sku_message').textContent = '';
     alert(`Master SKU could not be saved: ${error.message}`);
