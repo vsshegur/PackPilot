@@ -28,7 +28,7 @@ async function loadInvitations() {
     const snapshot = await getDocs(query(collection(db, 'managerInvites'), where('ownerUid', '==', user.uid)));
     invitations = snapshot.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
     renderInvitations();
-    Promise.allSettled(invitations.map(invite => cloudGateway('manager-upsert', {
+    Promise.allSettled(invitations.filter(invite => invite.status === 'accepted').map(invite => cloudGateway('manager-upsert', {
       sellerUid: user.uid,
       managerEmail: invite.managerEmail
     }))).catch(() => {});
@@ -50,8 +50,14 @@ function renderInvitations() {
     emailCell.textContent = invite.managerEmail;
     emailCell.className = 'sku-id';
     const status = document.createElement('span');
-    status.className = `status-badge ${invite.status === 'accepted' ? 'status-badge--success' : 'status-badge--warning'}`;
-    status.textContent = invite.status === 'accepted' ? 'Active' : 'Waiting for sign-in';
+    const statusMap = {
+      accepted: { className: 'status-badge--success', label: 'Accepted · active' },
+      rejected: { className: 'status-badge--muted', label: 'Rejected' },
+      pending: { className: 'status-badge--warning', label: 'Awaiting response' }
+    };
+    const inviteStatus = statusMap[invite.status] || statusMap.pending;
+    status.className = `status-badge ${inviteStatus.className}`;
+    status.textContent = inviteStatus.label;
     statusCell.appendChild(status);
     dateCell.textContent = new Date(Number(invite.createdAt)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     const revoke = document.createElement('button');
@@ -105,21 +111,13 @@ el('team_inviteBtn').addEventListener('click', async () => {
       managerEmail: email,
       ownerUid: user.uid,
       ownerEmail: normalizeEmail(user.email),
+      ownerName: user.displayName || 'PackPilot Seller',
       status: 'pending',
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
-    let cloudReady = true;
-    try {
-      await cloudGateway('manager-upsert', { sellerUid: user.uid, managerEmail: email });
-    } catch (error) {
-      cloudReady = false;
-      console.warn('Cloud manager access is waiting for setup.', error);
-    }
     el('team_email').value = '';
-    el('team_message').textContent = cloudReady
-      ? `${email} can now sign in with Google and open your active PDFs.`
-      : `${email} was invited. Cloud PDF access will activate after the Platform Super Admin connects Supabase.`;
+    el('team_message').textContent = `${email} was invited. They must accept the Operations Manager role after Google sign-in before any PDF access starts.`;
     await loadInvitations();
   } catch (error) {
     el('team_message').textContent = '';
