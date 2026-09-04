@@ -26,7 +26,8 @@ service cloud.firestore {
       return signedIn()
         && exists(/databases/$(database)/documents/managerInvites/$(email()))
         && get(/databases/$(database)/documents/managerInvites/$(email())).data.ownerUid == ownerUid
-        && get(/databases/$(database)/documents/managerInvites/$(email())).data.status in ['pending', 'accepted'];
+        && get(/databases/$(database)/documents/managerInvites/$(email())).data.status == 'accepted'
+        && get(/databases/$(database)/documents/managerInvites/$(email())).data.acceptedUid == request.auth.uid;
     }
 
     match /publicStats/{documentId} {
@@ -49,7 +50,8 @@ service cloud.firestore {
       allow update: if isSuperAdmin()
         || (signedIn() && request.auth.uid == uid && request.resource.data.role == resource.data.role && request.resource.data.ownerUid == resource.data.ownerUid)
         || (signedIn() && request.auth.uid == uid && resource.data.role in ['user', 'seller', 'seller_owner'] && request.resource.data.role in ['seller', 'seller_owner'] && request.resource.data.ownerUid == uid)
-        || (signedIn() && request.auth.uid == uid && request.resource.data.role == 'operations_manager' && isInvitedManager(request.resource.data.ownerUid));
+        || (signedIn() && request.auth.uid == uid && request.resource.data.role == 'operations_manager' && isInvitedManager(request.resource.data.ownerUid))
+        || (signedIn() && request.auth.uid == uid && resource.data.role == 'operations_manager' && request.resource.data.role in ['seller', 'seller_owner'] && request.resource.data.ownerUid == uid && !isInvitedManager(resource.data.ownerUid));
 
       match /pdfs/{pdfId} {
         allow read: if signedIn() && (isSeller(uid) || isInvitedManager(uid));
@@ -102,7 +104,9 @@ service cloud.firestore {
       allow update: if signedIn() && (
         resource.data.ownerUid == request.auth.uid
         || (managerEmail == email()
+          && resource.data.status == 'pending'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedUid', 'acceptedAt', 'updatedAt'])
+          && request.resource.data.status in ['accepted', 'rejected']
           && request.resource.data.acceptedUid == request.auth.uid)
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
