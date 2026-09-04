@@ -1,0 +1,111 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function email() {
+      return request.auth.token.email.lower();
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return signedIn() && (email() == 'vsshegur@gmail.com' || currentUser().role == 'platform_super_admin');
+    }
+
+    function isSeller(ownerUid) {
+      return signedIn() && request.auth.uid == ownerUid && currentUser().role in ['seller', 'seller_owner', 'platform_super_admin', 'admin'];
+    }
+
+    function isInvitedManager(ownerUid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/managerInvites/$(email()))
+        && get(/databases/$(database)/documents/managerInvites/$(email())).data.ownerUid == ownerUid
+        && get(/databases/$(database)/documents/managerInvites/$(email())).data.status in ['pending', 'accepted'];
+    }
+
+    match /publicStats/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /appConfig/{documentId} {
+      allow read: if signedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /users/{uid} {
+      allow create: if signedIn() && request.auth.uid == uid && (
+        request.resource.data.role in ['seller', 'seller_owner']
+        || (request.resource.data.role == 'operations_manager' && isInvitedManager(request.resource.data.ownerUid))
+        || (email() == 'vsshegur@gmail.com' && request.resource.data.role == 'platform_super_admin')
+      );
+      allow read: if signedIn() && (request.auth.uid == uid || isInvitedManager(uid) || isSuperAdmin());
+      allow update: if isSuperAdmin()
+        || (signedIn() && request.auth.uid == uid && request.resource.data.role == resource.data.role && request.resource.data.ownerUid == resource.data.ownerUid)
+        || (signedIn() && request.auth.uid == uid && resource.data.role in ['user', 'seller', 'seller_owner'] && request.resource.data.role in ['seller', 'seller_owner'] && request.resource.data.ownerUid == uid)
+        || (signedIn() && request.auth.uid == uid && request.resource.data.role == 'operations_manager' && isInvitedManager(request.resource.data.ownerUid));
+
+      match /pdfs/{pdfId} {
+        allow read: if signedIn() && (isSeller(uid) || isInvitedManager(uid));
+        allow create: if isSeller(uid)
+          && request.resource.data.ownerUid == uid
+          && request.resource.data.expiresAt <= request.time.toMillis() + 21600000
+          && request.resource.data.expiresAt > request.time.toMillis();
+        allow update, delete: if isSeller(uid);
+      }
+
+      match /labelBatches/{batchId} {
+        allow read: if isSeller(uid);
+        allow create: if isSeller(uid)
+          && request.resource.data.keys().hasOnly(['ownerUid', 'platform', 'format', 'totalOrders', 'totalPieces', 'createdAt'])
+          && request.resource.data.ownerUid == uid
+          && request.resource.data.platform in ['flipkart', 'meesho']
+          && request.resource.data.format is string
+          && request.resource.data.totalOrders is int
+          && request.resource.data.totalOrders > 0
+          && request.resource.data.totalOrders <= 5000
+          && request.resource.data.totalPieces is int
+          && request.resource.data.totalPieces >= request.resource.data.totalOrders
+          && request.resource.data.totalPieces <= 50000
+          && request.resource.data.createdAt is int
+          && request.resource.data.createdAt >= request.time.toMillis() - 300000
+          && request.resource.data.createdAt <= request.time.toMillis() + 300000;
+        allow update, delete: if false;
+      }
+
+      match /stats/{documentId} {
+        allow read: if isSeller(uid);
+        allow write: if false;
+      }
+
+      match /{subcollection}/{documentId} {
+        allow read, write: if subcollection != 'pdfs'
+          && subcollection != 'labelBatches'
+          && subcollection != 'stats'
+          && isSeller(uid);
+      }
+    }
+
+    match /managerInvites/{managerEmail} {
+      allow get: if signedIn() && (managerEmail == email() || resource.data.ownerUid == request.auth.uid);
+      allow list: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.managerEmail == managerEmail
+        && currentUser().role in ['seller', 'seller_owner', 'platform_super_admin', 'admin'];
+      allow update: if signedIn() && (
+        resource.data.ownerUid == request.auth.uid
+        || (managerEmail == email()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedUid', 'acceptedAt', 'updatedAt'])
+          && request.resource.data.acceptedUid == request.auth.uid)
+      );
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}

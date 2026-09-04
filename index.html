@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="PackPilot by Shegur's helps Indian marketplace sellers prepare labels, manage SKUs, calculate profit, and securely hand finished print PDFs to their operations team.">
+  <meta name="theme-color" content="#0b1728">
+  <title>PackPilot by Shegur's</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%234f46e5%22/><path d=%22M19 19h26v8H27v6h14v8H27v4h18v8H19z%22 fill=%22white%22/></svg>">
+  <link rel="stylesheet" href="./styles.css">
+
+  <script>
+    (() => {
+      const stored = localStorage.getItem('shegurs-theme');
+      const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = stored || preferred;
+    })();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+
+<body>
+  <a class="skip-link" href="#mainContent">Skip to workspace</a>
+  <div class="ambient ambient--one" aria-hidden="true"></div>
+  <div class="ambient ambient--two" aria-hidden="true"></div>
+  <div id="syntaxErrorBanner" class="system-banner hidden" role="alert"></div>
+
+  <div class="app-shell">
+    <aside id="appSidebar" class="sidebar hidden" aria-label="Application navigation">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="m4 8 8-4 8 4-8 4-8-4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 8v8l8 4 8-4V8M12 12v8" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m8.5 6 8 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <strong>PackPilot</strong>
+          <span>by Shegur's</span>
+        </div>
+      </div>
+
+      <nav id="workspaceNav" class="sidebar-nav">
+        <button class="nav-item seller-only" type="button" data-app="dashboard">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg>
+          <span><strong>Dashboard</strong><small>My label activity</small></span>
+        </button>
+        <button class="nav-item is-active seller-only" type="button" data-app="labelCutter">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m8.5 12.5-4.8 4.8a2.4 2.4 0 1 0 3.4 3.4l4.9-4.9M15.5 12.5l4.8 4.8a2.4 2.4 0 1 1-3.4 3.4L12 15.8M9.2 10.8 4 5.6M14.8 10.8 20 5.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="13.4" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
+          <span><strong>Label Cutter</strong><small>Flipkart &amp; Meesho</small></span>
+        </button>
+        <button class="nav-item seller-only" type="button" data-app="fkPnlCalculator">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span><strong>Profit Calculator</strong><small>Flipkart SKU P&amp;L</small></span>
+        </button>
+        <button class="nav-item seller-only" type="button" data-app="meeshoPnl">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m4 14 5-4 6 3 5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span><strong>Meesho Profit</strong><small>SKU profit &amp; returns</small></span>
+        </button>
+        <button class="nav-item seller-only" type="button" data-app="settlement">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m17 17 2 2 3-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span><strong>Reconciliation</strong><small>Find settlement gaps</small></span>
+        </button>
+        <button class="nav-item seller-only" type="button" data-app="skuMaster">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span><strong>SKU Master</strong><small>Costs &amp; product data</small></span>
+        </button>
+        <button class="nav-item seller-only" type="button" data-app="marginCalculator">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 7h8M8 12h2m4 0h2m-8 4h2m4 0h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span><strong>Margin Calculator</strong><small>Price before listing</small></span>
+        </button>
+        <button class="nav-item" type="button" data-app="cloudLibrary">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .7-7.94A6 6 0 0 0 6.3 8.5 4.5 4.5 0 0 0 7 18Z" stroke="currentColor" stroke-width="1.8"/><path d="M12 9v6m0 0-2-2m2 2 2-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span><strong>Cloud PDFs</strong><small>Auto-delete in 6 hours</small></span>
+        </button>
+        <button class="nav-item seller-only" type="button" data-app="team">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 8h5m-2.5-2.5v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span><strong>Operations Team</strong><small>Invite by email</small></span>
+        </button>
+        <button class="nav-item seller-only" type="button" data-app="settings">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V21h-4v-.08A1.7 1.7 0 0 0 8.96 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.6 8.96a1.7 1.7 0 0 0-.34-1.88l-.06-.06L7.03 4.2l.06.06A1.7 1.7 0 0 0 8.96 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.53 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <span><strong>Settings</strong><small>Plan &amp; store links</small></span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="privacy-note">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" stroke="currentColor" stroke-width="1.8"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span><strong>Controlled access</strong><small>Cloud print files expire after six hours.</small></span>
+        </div>
+        <a class="support-link" href="https://wa.me/919970836509" target="_blank" rel="noreferrer">WhatsApp support <span>↗</span></a>
+      </div>
+    </aside>
+
+    <button id="mobileMenuBackdrop" class="mobile-menu-backdrop" type="button" aria-label="Close navigation"></button>
+
+    <div class="app-main">
+      <header class="topbar">
+        <button id="mobileMenuBtn" class="icon-button mobile-menu-button hidden" type="button" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="mobile-brand">
+          <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m4 8 8-4 8 4-8 4-8-4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 8v8l8 4 8-4V8M12 12v8" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
+          <div><strong>PackPilot</strong><span>by Shegur's</span></div>
+        </div>
+
+        <div id="pageIdentity" class="page-identity hidden">
+          <span id="pageEyebrow">Today's workspace</span>
+          <h1 id="pageTitle">Label Cutter</h1>
+        </div>
+
+        <div class="topbar-actions">
+          <button id="themeToggle" class="icon-button" type="button" aria-label="Switch color theme" title="Switch color theme">
+            <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.4 15.2A8.4 8.4 0 0 1 8.8 3.6 8.5 8.5 0 1 0 20.4 15.2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          </button>
+
+          <div id="userInfo" class="user-menu hidden">
+            <button id="openSettingsBtn" class="user-summary" type="button" title="Open account settings">
+              <img id="userAvatar" src="" alt="">
+              <span><strong id="userName">Account</strong><small id="userPlan">Checking plan</small></span>
+            </button>
+            <button id="adminToggleBtn" class="text-button hidden" type="button">Admin</button>
+            <button id="logoutBtn" class="icon-button icon-button--danger" type="button" aria-label="Sign out" title="Sign out">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14 5-5-5-5m5 5H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main id="mainContent" class="content">
+        <section id="authPanel" class="landing-view">
+          <div id="authWarning" class="landing-content">
+            <nav class="landing-nav" aria-label="Home navigation">
+              <div class="landing-wordmark"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m4 8 8-4 8 4-8 4-8-4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 8v8l8 4 8-4V8M12 12v8" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span><span><strong>PackPilot</strong><small>by Shegur's</small></span></div>
+              <div class="landing-links"><a href="#capabilities">Features</a><a href="#roles">Roles</a><a href="#security">Security</a><a class="button button--secondary" href="#signin">Sign in</a></div>
+            </nav>
+
+            <div class="landing-hero">
+              <div class="landing-hero__copy">
+                <div class="auth-badge"><span></span> Built for Indian marketplace sellers</div>
+                <h1>Your marketplace orders, <em>ready to pack.</em></h1>
+                <p>Prepare reliable Flipkart and Meesho thermal labels, understand SKU profit, reconcile settlements, and send ready-to-print PDFs to your operations team from one focused workspace.</p>
+                <div id="signin" class="landing-actions">
+                  <button id="googleSignInBtn" class="button button--primary button--large" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.09-1.92 3.27-4.76 3.27-8.1Z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.87 0-5.3-1.94-6.17-4.54H2.15v2.84A11 11 0 0 0 12 23Z"/><path fill="#FBBC05" d="M5.83 14.09A6.6 6.6 0 0 1 5.49 12c0-.73.13-1.43.34-2.09V7.07H2.15A11 11 0 0 0 1 12c0 1.78.43 3.46 1.15 4.93l3.68-2.84Z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A10.55 10.55 0 0 0 12 1a11 11 0 0 0-9.85 6.07l3.68 2.84C6.7 7.31 9.13 5.38 12 5.38Z"/></svg>
+                    Continue with Google
+                  </button>
+                  <a class="button button--ghost button--large" href="#capabilities">Explore every feature</a>
+                </div>
+                <p class="auth-fineprint">No installation. Your original files are processed in the browser; shared print PDFs automatically expire after six hours.</p>
+                <div class="auth-proof" aria-label="Application highlights"><span><strong>3×5 · 4×4 · 4×6</strong> thermal formats</span><span><strong>Flipkart + Meesho</strong> in one workspace</span><span><strong>6-hour</strong> secure PDF sharing</span></div>
+              </div>
+              <div class="hero-console" aria-label="Application-wide label count">
+                <div class="hero-console__top"><span><i></i><i></i><i></i></span><b>Platform activity</b><small>Live</small></div>
+                <div class="hero-stat"><span>Labels processed till date</span><strong id="publicLabelCount">—</strong><em>Combined app total only</em></div>
+                <div class="hero-progress"><span class="hero-progress--live"></span></div>
+                <div class="hero-steps hero-privacy-list"><span class="done"><b>✓</b> Seller totals stay private</span><span class="done"><b>✓</b> SKUs and orders are never public</span><span class="done"><b>✓</b> Original PDFs stay in the browser</span></div>
+                <div class="hero-file hero-file--privacy"><span>✓</span><div><strong>Private by seller account</strong><small>Only this combined label count is public</small></div><b>Protected</b></div>
+              </div>
+            </div>
+
+            <section id="capabilities" class="landing-section">
+              <div class="section-intro"><span class="eyebrow">Complete seller toolkit</span><h2>Every step after the order arrives.</h2><p>Use only the tools you need today. Saved SKU costs and account defaults connect the workflow, so repeated work becomes faster.</p></div>
+              <div id="authFeatures" class="feature-grid">
+                <article class="feature-card feature-card--wide"><span class="feature-number">01</span><div><strong>Flipkart &amp; Meesho Label Cutter</strong><p>Upload several marketplace PDFs, detect individual orders, keep exchange-order SKUs intact, and export sharp thermal layouts with clean bottom borders.</p><ul><li>3×5, 4×4 and 4×6 sizes</li><li>Label-only or label + invoice</li><li>Automatic courier, seller, SKU and quantity summary</li></ul></div></article>
+                <article class="feature-card"><span class="feature-number">02</span><div><strong>Brand logo &amp; store QR</strong><p>Save one account logo for every supported size. Meesho store links are matched to “Sold By” and printed as a QR without covering shipment details.</p></div></article>
+                <article class="feature-card"><span class="feature-number">03</span><div><strong>Private Seller Dashboard</strong><p>Each Seller sees only their own Flipkart and Meesho order totals, pieces, processing history and recent label batches. Other sellers cannot access this data.</p></div></article>
+                <article class="feature-card"><span class="feature-number">04</span><div><strong>Meesho Profit &amp; Loss</strong><p>Combine orders, completed payments and the six-month return sheet for a closed date range. See dispatched, cancelled, RTO, customer-return and still-processing counts before profit.</p></div></article>
+                <article class="feature-card"><span class="feature-number">05</span><div><strong>Settlement Reconciliation</strong><p>Compare the order report with the settlement report by order ID. See matched, missing, short-paid and excess-paid transactions immediately.</p></div></article>
+                <article class="feature-card"><span class="feature-number">06</span><div><strong>Master &amp; child SKU mapping</strong><p>Group several marketplace SKU names under one packing identity. Flipkart and Meesho lists stay separate, while saved product, packaging and labour costs flow into profit tools.</p></div></article>
+                <article class="feature-card"><span class="feature-number">07</span><div><strong>Price &amp; Margin Calculator</strong><p>Test a selling price against product cost, marketplace fees, shipping, ads, GST and expected returns before you list.</p></div></article>
+                <article class="feature-card feature-card--wide"><span class="feature-number">08</span><div><strong>Six-hour Cloud PDF Desk</strong><p>The Seller chooses only from label PDFs processed in PackPilot during the previous six hours. Random file uploads are not available. Only that Seller and their assigned Operations Manager can open the shared files.</p><ul><li>Preview, download and print from another device</li><li>Visible local and cloud expiry countdowns</li><li>Seller can permanently delete any file earlier</li></ul></div></article>
+              </div>
+            </section>
+
+            <section class="marketplace-band" aria-label="Marketplace-specific tools">
+              <article><span class="market-logo market-logo--fk">F</span><div><small>FLIPKART WORKFLOW</small><h3>Cut labels and inspect SKU-level profit.</h3><p>Use official shipping PDFs and the SKU P&amp;L workbook while keeping product costs ready for the next report.</p></div></article>
+              <article><span class="market-logo market-logo--ms">M</span><div><small>MEESHO WORKFLOW</small><h3>Exchange-ready labels, store QR and margin control.</h3><p>Preserve full SKUs, add the shipment barcode to 3×5 store layouts, and analyse order economics by SKU.</p></div></article>
+            </section>
+
+            <section id="roles" class="landing-section role-section">
+              <div class="section-intro"><span class="eyebrow">Clear responsibilities</span><h2>Three roles, with only the access each person needs.</h2></div>
+              <div class="role-grid">
+                <article><span>01</span><h3>Platform Super Admin</h3><p>Manage users, subscriptions and signed day adjustments across the platform.</p><small>Platform control</small></article>
+                <article class="role-card--accent"><span>02</span><h3>Seller</h3><p>Open a private dashboard, generate labels, run business tools, save cloud PDFs, manage defaults and invite operations staff.</p><small>Private seller workspace</small></article>
+                <article><span>03</span><h3>Operations Manager</h3><p>Sign in with the invited Google email and access only that Seller's unexpired print PDFs.</p><small>View and download only</small></article>
+              </div>
+            </section>
+
+            <section class="landing-section workflow-section">
+              <div class="section-intro"><span class="eyebrow">A shorter dispatch loop</span><h2>Prepare once. Hand off securely. Keep moving.</h2></div>
+              <div class="workflow-grid"><article><b>1</b><div><h3>Upload</h3><p>Add marketplace label PDFs or business reports.</p></div></article><article><b>2</b><div><h3>Prepare</h3><p>Choose the saved format, verify counts and generate the print file.</p></div></article><article><b>3</b><div><h3>Share</h3><p>Save the finished PDF to the six-hour cloud desk.</p></div></article><article><b>4</b><div><h3>Print</h3><p>Your invited manager opens only the file needed for packing.</p></div></article></div>
+            </section>
+
+            <section id="security" class="security-band"><div><span class="security-icon">✓</span><div><span class="eyebrow">Private by seller</span><h2>Only the Seller and assigned manager can open a PDF.</h2></div></div><p>The Platform Super Admin and other sellers cannot open these files. The Seller may delete immediately; otherwise access ends at six hours and scheduled cleanup permanently removes both the PDF and its record.</p></section>
+
+            <section class="landing-cta"><span class="eyebrow">Ready for today's orders?</span><h2>Open your dispatch workspace.</h2><p>Sign in with Google to use your saved logo, label sizes, SKU costs, store links and role permissions.</p><a class="button button--primary button--large" href="#signin">Continue with Google</a></section>
+            <footer class="landing-footer"><span>© 2026 PackPilot by Shegur's</span><a href="https://wa.me/919970836509" target="_blank" rel="noreferrer">WhatsApp support ↗</a></footer>
+          </div>
+
+          <div id="expiredWarning" class="expired-panel hidden">
+            <div class="expired-icon">!</div><span>Plan paused</span><h2>Your access has expired</h2><p>Renew your plan to continue preparing labels and profit reports.</p><a href="https://wa.me/919970836509" target="_blank" rel="noreferrer" class="button button--success button--large">Renew on WhatsApp</a><button id="expiredLogoutBtn" class="text-button" type="button">Use another account</button>
+          </div>
+        </section>
+
+        <section id="dashboardWorkspace" class="workspace hidden seller-only" aria-labelledby="dashboardHeading">
+          <div class="workspace-heading dashboard-heading"><div><span class="eyebrow">Private seller overview</span><h2 id="dashboardHeading">Your label dashboard</h2><p id="dash_greeting">Only label counts from your account are shown here.</p></div><span class="private-account-pill"><b>✓</b> Visible only to you</span></div>
+          <div class="dashboard-privacy"><span>Private</span><p>Your dashboard is isolated by your Google account. Other sellers, Operations Managers and the public cannot view these totals. We save only batch counts—not customer addresses, order IDs, SKUs or original PDFs.</p></div>
+          <div class="dashboard-kpi-grid">
+            <article><span>Total orders processed</span><strong id="dash_allOrders">0</strong><small>Flipkart + Meesho</small></article>
+            <article><span>Total product pieces</span><strong id="dash_totalPieces">0</strong><small>From your labels</small></article>
+            <article><span>Print batches</span><strong id="dash_batches">0</strong><small>Successful processing runs</small></article>
+            <article class="dashboard-kpi--accent"><span>Last 30 days</span><strong id="dash_last30">0</strong><small>Orders processed</small></article>
+          </div>
+          <div class="market-totals">
+            <article class="market-total market-total--flipkart"><div><span class="market-logo market-logo--fk">F</span><div><small>FLIPKART</small><h3>Your Flipkart labels</h3></div></div><strong id="dash_fkOrders">0</strong><p>orders processed · <b id="dash_fkPieces">0</b> pieces</p></article>
+            <article class="market-total market-total--meesho"><div><span class="market-logo market-logo--ms">M</span><div><small>MEESHO</small><h3>Your Meesho labels</h3></div></div><strong id="dash_msOrders">0</strong><p>orders processed · <b id="dash_msPieces">0</b> pieces</p></article>
+          </div>
+          <div class="dashboard-lower-grid">
+            <section class="panel table-panel dashboard-recent"><div class="table-panel__heading"><div><h3>Recent processing activity</h3><p id="dash_lastUpdated">Your latest successful label batches.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Marketplace</th><th>Format</th><th class="number">Orders</th><th class="number">Pieces</th></tr></thead><tbody id="dash_recentBody"></tbody></table></div><div id="dash_empty" class="empty-state">No label activity yet. Process your first Flipkart or Meesho batch to start this dashboard.</div></section>
+            <section class="panel dashboard-actions"><span class="eyebrow">Quick actions</span><h3>Continue your work</h3><p>Go directly to the tools used most often during packing.</p><button class="dashboard-action" type="button" data-app="labelCutter"><span>Prepare labels</span><b>→</b></button><button class="dashboard-action" type="button" data-app="cloudLibrary"><span>Open cloud PDFs</span><b>→</b></button><button class="dashboard-action" type="button" data-app="skuMaster"><span>Manage SKU Master</span><b>→</b></button></section>
+          </div>
+        </section>
+
+        <section id="labelWorkspace" class="workspace hidden" aria-labelledby="labelHeading">
+          <div class="workspace-heading">
+            <div><span class="eyebrow">Print preparation</span><h2 id="labelHeading">Prepare thermal labels</h2><p>Upload marketplace PDFs, choose your printer size, then review the order count before saving.</p></div>
+            <div class="local-pill"><span></span> Files stay on this device</div>
+          </div>
+
+          <div class="platform-switch" role="tablist" aria-label="Marketplace">
+            <button id="lc_tabFk" class="platform-switch__button is-active" type="button" role="tab" aria-selected="true">
+              <span class="market-dot market-dot--flipkart"></span> Flipkart
+            </button>
+            <button id="lc_tabMs" class="platform-switch__button" type="button" role="tab" aria-selected="false">
+              <span class="market-dot market-dot--meesho"></span> Meesho
+            </button>
+          </div>
+
+          <div class="workbench">
+            <section class="panel upload-panel" aria-labelledby="uploadHeading">
+              <div class="panel-heading">
+                <div><span class="step-number">1</span><div><h3 id="uploadHeading">Add shipping PDFs</h3><p>Select one or several files.</p></div></div>
+                <span id="lc_fileCount" class="count-badge">0 files</span>
+              </div>
+
+              <div id="lc_dropzone" class="upload-zone" data-platform="flipkart">
+                <input type="file" id="lc_pdfFileInput" accept="application/pdf,.pdf" multiple aria-label="Choose marketplace PDF files">
+                <div class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <strong>Drop <span id="lc_platformName">Flipkart</span> PDFs here</strong>
+                <p>or click to browse from your computer</p>
+                <span class="browse-chip">Choose PDFs</span>
+              </div>
+
+              <div id="lc_fileManager" class="file-manager hidden">
+                <div class="file-manager__title"><span>Ready to process</span><button id="lc_clearFilesBtn" class="text-button text-button--danger" type="button">Clear all</button></div>
+                <div id="lc_fileList" class="file-list"></div>
+              </div>
+            </section>
+
+            <section class="panel setup-panel" aria-labelledby="setupHeading">
+              <div class="panel-heading">
+                <div><span class="step-number">2</span><div><h3 id="setupHeading">Set print output</h3><p>Match your thermal printer.</p></div></div>
+              </div>
+
+              <div class="form-stack">
+                <label class="field">
+                  <span>Label size &amp; invoice</span>
+                  <select id="lc_printFormat"></select>
+                </label>
+
+                <div class="field">
+                  <span>Brand mark <small>Converted for thermal print</small></span>
+                  <label class="logo-control" for="lc_logoInput">
+                    <span class="logo-preview"><img id="lc_logoPreview" src="" alt="Current label logo"></span>
+                    <span class="logo-copy"><strong>Change default logo</strong><small>PNG or JPG · saved to your account</small></span>
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <input type="file" id="lc_logoInput" accept="image/png,image/jpeg,image/webp">
+                  </label>
+                </div>
+
+                <label class="toggle-row" for="lc_includeSummary">
+                  <span><strong>Add packing summary</strong><small>Courier, seller, SKU and piece totals</small></span>
+                  <input id="lc_includeSummary" type="checkbox" checked>
+                  <span class="toggle" aria-hidden="true"></span>
+                </label>
+              </div>
+
+              <div class="setup-actions">
+                <button id="lc_resetBtn" class="button button--secondary" type="button">Reset</button>
+                <button id="lc_processBtn" class="button button--primary button--grow" type="button" disabled>
+                  <span id="lc_processBtnText">Process labels</span>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <section id="lc_results" class="result-panel hidden" aria-live="polite">
+            <div class="result-success"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 12 3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg><div><strong>Batch is ready</strong><span>Your labels were checked and arranged.</span></div></div>
+            <div class="result-metrics">
+              <div><span>Orders</span><strong id="lc_metricTotal">0</strong></div>
+              <div><span>Total pieces</span><strong id="lc_metricPieces">0</strong></div>
+            </div>
+            <div class="result-actions">
+              <button id="lc_previewBtn" class="button button--secondary" type="button">Preview PDF</button>
+              <button id="lc_downloadBtn" class="button button--success" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Save print PDF</button>
+              <button id="lc_cloudSaveBtn" class="button button--primary seller-cloud-only" type="button">Share to manager · 6h</button>
+            </div>
+          </section>
+
+          <section id="recoveryPanel" class="panel recovery-panel hidden" aria-labelledby="recoveryHeading">
+            <div class="panel-heading">
+              <div><span class="step-number step-number--muted"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.68M4 4v4.68h4.68" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><h3 id="recoveryHeading">Recent print files</h3><p>Stored locally for six hours.</p></div></div>
+            </div>
+            <ul id="savedBatchesList" class="recovery-list"></ul>
+          </section>
+        </section>
+
+        <section id="meeshoPnlWorkspace" class="workspace hidden seller-only" aria-labelledby="msPnlHeading">
+          <div class="workspace-heading"><div><span class="eyebrow eyebrow--meesho">Meesho business tools</span><h2 id="msPnlHeading">Completed-payment profit &amp; loss</h2><p>Join orders, payments and returns, then calculate profit only for orders whose payment cycle is complete.</p></div><div class="local-pill local-pill--meesho"><span></span> Reports stay on this device</div></div>
+
+          <div class="ms-disclaimer" role="note"><span>15</span><div><strong>Wait 15 days after the month ends</strong><p>Upload a complete monthly report only after the settlement buffer. For example, August should be analysed from 15 September onward; newer orders remain under process and are excluded from profit.</p></div></div>
+
+          <section class="panel ms-report-panel">
+            <div class="panel-heading"><div><span class="step-number">1</span><div><h3>Choose the reporting period</h3><p>The end date must be at least 15 days old.</p></div></div></div>
+            <div class="date-range"><label class="field"><span>From date</span><input id="ms_fromDate" type="date"></label><label class="field"><span>To date</span><input id="ms_toDate" type="date"></label><span id="ms_dateHint" class="date-hint">Select a completed month.</span></div>
+          </section>
+
+          <div class="ms-report-grid">
+            <label class="pnl-upload pnl-upload--meesho" for="ms_ordersInput"><input id="ms_ordersInput" type="file" accept=".xlsx,.xls,.csv"><div class="pnl-upload__icon">1</div><div><span class="eyebrow">Required</span><strong>Orders report</strong><p id="ms_ordersStatus">Order ID, SKU, quantity, status and order/dispatch date.</p></div><span class="button button--secondary">Choose orders</span></label>
+            <label class="pnl-upload pnl-upload--meesho" for="ms_paymentsInput"><input id="ms_paymentsInput" type="file" accept=".xlsx,.xls,.csv"><div class="pnl-upload__icon">2</div><div><span class="eyebrow">Required</span><strong>Payment report</strong><p id="ms_paymentsStatus">Order ID, final settlement amount and payment status/date.</p></div><span class="button button--secondary">Choose payments</span></label>
+            <label class="pnl-upload pnl-upload--meesho" for="ms_returnsInput"><input id="ms_returnsInput" type="file" accept=".xlsx,.xls,.csv"><div class="pnl-upload__icon">3</div><div><span class="eyebrow">Last six months</span><strong>Returns &amp; RTO report</strong><p id="ms_returnsStatus">Use Meesho's latest six-month returns sheet.</p></div><span class="button button--secondary">Choose returns</span></label>
+          </div>
+          <div class="ms-run-row"><p id="ms_pnlStatus">Add all three reports to calculate a closed period.</p><button id="ms_runPnlBtn" class="button button--primary" type="button" disabled>Calculate completed profit</button></div>
+
+          <div id="ms_pnlResults" class="pnl-results hidden">
+            <div class="period-summary"><span id="ms_periodLabel">Selected period</span><strong id="ms_completedHeadline">0 completed-payment orders used for profit</strong></div>
+            <div class="order-state-grid">
+              <article><span>Dispatched</span><strong id="ms_kpiDispatched">0</strong></article>
+              <article><span>Cancelled</span><strong id="ms_kpiCancelled">0</strong></article>
+              <article><span>RTO</span><strong id="ms_kpiRto">0</strong></article>
+              <article><span>Customer return</span><strong id="ms_kpiReturns">0</strong></article>
+              <article class="order-state--pending"><span>Still under process</span><strong id="ms_kpiPending">0</strong></article>
+            </div>
+            <div class="kpi-grid"><article><span>Completed units</span><strong id="ms_kpiUnits">0</strong><small>Paid orders only</small></article><article><span>Final settlement</span><strong id="ms_kpiSettlement">₹0</strong><small>Completed payment rows</small></article><article><span>Total operating cost</span><strong id="ms_kpiCost">₹0</strong><small>Product + packing + labour</small></article><article class="kpi-card--meesho"><span>Estimated profit</span><strong id="ms_kpiProfit">₹0</strong><small>Completed payments only</small></article></div>
+            <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Master SKU profit breakdown</h3><p>Enter unit costs here when missing. Values are saved to your account and reused next time.</p></div></div><div class="table-scroll"><table class="ms-profit-table"><thead><tr><th>Master SKU</th><th>Child SKUs found</th><th class="number">Paid units</th><th class="number">Settlement</th><th class="number">Product incl. GST</th><th class="number">Packaging</th><th class="number">Labour &amp; other</th><th class="number">Profit</th></tr></thead><tbody id="ms_pnlBody"></tbody></table></div></section>
+          </div>
+        </section>
+
+        <section id="settlementWorkspace" class="workspace hidden seller-only" aria-labelledby="settlementHeading">
+          <div class="workspace-heading"><div><span class="eyebrow">Payment control</span><h2 id="settlementHeading">Settlement reconciliation</h2><p>Compare marketplace order values with settled amounts and isolate gaps by order ID.</p></div></div>
+          <div class="recon-upload-grid"><label class="pnl-upload" for="recon_orderInput"><input id="recon_orderInput" type="file" accept=".xlsx,.xls,.csv"><div class="pnl-upload__icon">1</div><div><strong>Order report</strong><p id="recon_orderStatus">Upload the report containing order IDs and expected amounts.</p></div><span class="button button--secondary">Choose</span></label><label class="pnl-upload" for="recon_settlementInput"><input id="recon_settlementInput" type="file" accept=".xlsx,.xls,.csv"><div class="pnl-upload__icon">2</div><div><strong>Settlement report</strong><p id="recon_settlementStatus">Upload the report containing order IDs and paid amounts.</p></div><span class="button button--secondary">Choose</span></label></div>
+          <div class="recon-actions"><label class="field recon-tolerance"><span>Difference tolerance (₹)</span><input id="recon_tolerance" type="number" min="0" step="0.01" value="1"></label><button id="recon_runBtn" class="button button--primary" type="button" disabled>Compare reports</button></div>
+          <div id="recon_results" class="pnl-results hidden"><div class="kpi-grid"><article><span>Matched</span><strong id="recon_matched">0</strong><small>Within tolerance</small></article><article><span>Missing</span><strong id="recon_missing">0</strong><small>No settlement row</small></article><article><span>Short paid</span><strong id="recon_short">₹0</strong><small>Amount below expected</small></article><article class="kpi-card--accent"><span>Net difference</span><strong id="recon_difference">₹0</strong><small>Actual minus expected</small></article></div><section class="panel table-panel"><div class="table-panel__heading"><div><h3>Transactions needing attention</h3><p>Only missing or mismatched order IDs are shown.</p></div></div><div class="table-scroll"><table><thead><tr><th>Order ID</th><th>Status</th><th class="number">Expected</th><th class="number">Settled</th><th class="number">Difference</th></tr></thead><tbody id="recon_body"></tbody></table></div></section></div>
+        </section>
+
+        <section id="skuMasterWorkspace" class="workspace hidden seller-only" aria-labelledby="skuMasterHeading">
+          <div class="workspace-heading"><div><span class="eyebrow">Packing identity &amp; cost memory</span><h2 id="skuMasterHeading">Master and child SKUs</h2><p>Group different listing SKUs that use the same physical product. Flipkart and Meesho mappings are always kept separate.</p></div><span id="sku_count" class="count-badge">0 masters</span></div>
+          <div class="sku-example"><span>Example</span><strong>Elite-Ten-12x18</strong><i>contains</i><code>TEN-ELITE-1218</code><code>TEN-ELITE-1218XHJ</code><code>TEN-ELITE-1218KL</code></div>
+          <section class="panel sku-editor">
+            <div class="panel-heading"><div><span class="step-number">+</span><div><h3>Add or update a master SKU</h3><p>Paste any number of child SKUs, one per line or separated by commas.</p></div></div></div>
+            <div class="sku-master-form">
+              <label class="field"><span>Master SKU name</span><input id="sku_master" type="text" maxlength="120" placeholder="Elite-Ten-12x18"></label>
+              <label class="field"><span>Marketplace</span><select id="sku_marketplace"><option value="meesho">Meesho</option><option value="flipkart">Flipkart</option></select></label>
+              <label class="field field--children"><span>Child SKU names</span><textarea id="sku_children" rows="5" maxlength="5000" placeholder="TEN-ELITE-1218&#10;TEN-ELITE-1218XHJ&#10;TEN-ELITE-1218KL"></textarea><small>Exact names from shipping labels. Duplicate child SKUs in the same marketplace are prevented.</small></label>
+              <div class="sku-cost-grid">
+                <label class="field"><span>Product cost incl. GST (₹)</span><input id="sku_productCost" type="number" min="0" step="0.01" placeholder="250"></label>
+                <label class="field"><span>Packaging / unit (₹)</span><input id="sku_packagingCost" type="number" min="0" step="0.01" placeholder="12"></label>
+                <label class="field"><span>Labour &amp; other / unit (₹)</span><input id="sku_labourCost" type="number" min="0" step="0.01" placeholder="8"></label>
+                <label class="field"><span>Selling price (optional)</span><input id="sku_price" type="number" min="0" step="0.01" placeholder="499"></label>
+              </div>
+              <div class="sku-save-row"><p id="sku_message" class="setting-feedback" aria-live="polite"></p><button id="sku_saveBtn" class="button button--primary" type="button">Save master SKU</button></div>
+            </div>
+          </section>
+          <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Saved master mappings</h3><p>Single-quantity child labels roll up to the master in packing summaries. Multi-quantity rows remain under the original child SKU.</p></div><label class="field compact-search"><span class="sr-only">Search master or child SKUs</span><input id="sku_search" type="search" placeholder="Search master or child SKU"></label></div><div class="table-scroll"><table><thead><tr><th>Master SKU</th><th>Marketplace</th><th>Child SKUs</th><th class="number">Product</th><th class="number">Packing</th><th class="number">Labour</th><th class="number">Total / unit</th><th></th></tr></thead><tbody id="sku_body"></tbody></table></div><div id="sku_empty" class="empty-state">No master SKU mappings saved yet. Packing summaries will continue showing the original label SKUs.</div></section>
+        </section>
+
+        <section id="marginWorkspace" class="workspace hidden seller-only" aria-labelledby="marginHeading">
+          <div class="workspace-heading"><div><span class="eyebrow">Listing decision</span><h2 id="marginHeading">Price &amp; margin calculator</h2><p>Test a selling price against every predictable cost before you publish the listing.</p></div></div>
+          <div class="margin-layout"><section class="panel margin-inputs"><div class="panel-heading"><div><span class="step-number">₹</span><div><h3>Order economics</h3><p>All values are calculated instantly.</p></div></div></div><div class="margin-form"><label class="field field--full"><span>Load saved SKU (optional)</span><select id="margin_sku"><option value="">Manual calculation</option></select></label><label class="field"><span>Selling price (₹)</span><input id="margin_price" type="number" min="0" step="0.01" value="499"></label><label class="field"><span>Product cost (₹)</span><input id="margin_cost" type="number" min="0" step="0.01" value="250"></label><label class="field"><span>Marketplace fee (₹)</span><input id="margin_fee" type="number" min="0" step="0.01" value="35"></label><label class="field"><span>Shipping (₹)</span><input id="margin_shipping" type="number" min="0" step="0.01" value="65"></label><label class="field"><span>Ads / order (₹)</span><input id="margin_ads" type="number" min="0" step="0.01" value="10"></label><label class="field"><span>GST included (%)</span><input id="margin_gst" type="number" min="0" max="100" step="0.01" value="5"></label><label class="field"><span>Expected returns (%)</span><input id="margin_returns" type="number" min="0" max="100" step="0.01" value="10"></label><label class="field"><span>Planned units</span><input id="margin_units" type="number" min="1" step="1" value="100"></label></div></section><section class="margin-result-card"><span>Expected profit per order</span><strong id="margin_profit">₹0</strong><em id="margin_badge">0% margin</em><div class="margin-breakdown"><p><span>GST reserve</span><b id="margin_gstValue">₹0</b></p><p><span>Return-risk reserve</span><b id="margin_returnValue">₹0</b></p><p><span>Profit for planned units</span><b id="margin_total">₹0</b></p><p><span>Estimated break-even price</span><b id="margin_breakEven">₹0</b></p></div><div class="margin-meter"><span id="margin_meter"></span></div><small id="margin_guidance">Adjust the inputs to test a healthier price.</small></section></div>
+        </section>
+
+        <section id="cloudLibraryWorkspace" class="workspace hidden" aria-labelledby="cloudHeading">
+          <div class="workspace-heading"><div><span class="eyebrow">Temporary print handoff</span><h2 id="cloudHeading">Cloud PDFs</h2><p id="cloudRoleDescription">Ready-to-print files are available to your operations team for six hours only.</p></div><button id="cloud_refreshBtn" class="button button--secondary" type="button">Refresh</button></div>
+          <section id="cloud_ownerUpload" class="panel recent-output-panel seller-cloud-only">
+            <div class="recent-output-heading"><div><span class="step-number">6h</span><div><h3>Choose a processed PDF</h3><p>Only label PDFs generated in PackPilot on this device during the last six hours can be shared.</p></div></div><button id="cloud_refreshLocalBtn" class="button button--secondary" type="button">Refresh device list</button></div>
+            <div id="cloud_recentEmpty" class="empty-state">No recent processed PDFs on this device. Process a label batch first.</div>
+            <div id="cloud_recentList" class="recent-output-list"></div>
+          </section>
+          <div class="cloud-policy"><span>6h</span><div><strong>Private temporary access</strong><p>Only this Seller and the assigned manager can open each PDF. The Seller can delete it immediately, or automatic expiry removes it after six hours.</p></div></div>
+          <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Available print files</h3><p id="cloud_status">Loading your PDF desk…</p></div></div><div id="cloud_empty" class="empty-state hidden">No active PDFs. Process labels and share a recent output from this device.</div><div id="cloud_list" class="cloud-list"></div></section>
+        </section>
+
+        <section id="teamWorkspace" class="workspace hidden seller-only" aria-labelledby="teamHeading">
+          <div class="workspace-heading"><div><span class="eyebrow">Print-only access</span><h2 id="teamHeading">Operations team</h2><p>Invite a manager by Google email. After sign-in, they can see only your active cloud PDFs.</p></div></div>
+          <section class="panel invite-panel"><div><span class="step-number">@</span><div><h3>Invite Operations Manager</h3><p>Use the exact Google email they will sign in with.</p></div></div><div class="inline-form invite-form"><label class="field"><span>Email address</span><input id="team_email" type="email" placeholder="manager@example.com" maxlength="254"></label><button id="team_inviteBtn" class="button button--primary" type="button">Add manager</button></div><p id="team_message" class="setting-feedback" aria-live="polite"></p></section>
+          <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Invited managers</h3><p>Revoke an invitation to remove future access.</p></div></div><div class="table-scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody id="team_body"></tbody></table></div><div id="team_empty" class="empty-state">No operations managers invited yet.</div></section>
+        </section>
+
+        <section id="fkPnlWorkspace" class="workspace hidden" aria-labelledby="pnlHeading">
+          <div class="workspace-heading">
+            <div><span class="eyebrow">Profit review</span><h2 id="pnlHeading">Flipkart SKU profit</h2><p>Upload the official report, add your product costs, and see the real result after losses.</p></div>
+            <div class="local-pill"><span></span> Costs remember per account</div>
+          </div>
+
+          <label class="pnl-upload" for="fk_excelInput">
+            <input type="file" id="fk_excelInput" accept=".xlsx,.xls">
+            <div class="pnl-upload__icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9m-6-6 6 6m-6-6v6h6M8 14h8m-8 3h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div><span class="eyebrow">Upload report</span><strong>Drop Flipkart P&amp;L Excel here</strong><p id="fk_uploadStatus">The workbook must include a “SKU-level P&amp;L” sheet.</p></div>
+            <span class="button button--secondary">Choose Excel</span>
+          </label>
+
+          <div id="fk_calcSection" class="pnl-results hidden">
+            <div class="kpi-grid">
+              <article><span>Net units</span><strong id="fk_kpiUnits">0</strong><small>Across all SKUs</small></article>
+              <article><span>Total settlement</span><strong id="fk_kpiSettlement">₹0.00</strong><small>Bank settlement</small></article>
+              <article><span>Gross profit</span><strong id="fk_kpiGross">₹0.00</strong><small>SKUs with costs</small></article>
+              <article class="kpi-card--accent"><span>Final net profit</span><strong id="fk_kpiNet">₹0.00</strong><small>After additional losses</small></article>
+            </div>
+
+            <section class="panel cost-tools">
+              <div><span class="step-number">₹</span><div><h3>Fill missing product costs</h3><p>Only empty SKU costs will be updated.</p></div></div>
+              <div class="inline-form"><label class="currency-input"><span>₹</span><input type="number" id="fk_bulkCostInput" min="0" step="0.01" placeholder="150"></label><button id="fk_applyBulkBtn" class="button button--secondary" type="button">Apply to empty</button></div>
+            </section>
+
+            <section class="panel table-panel" aria-label="SKU profit details">
+              <div class="table-panel__heading"><div><h3>SKU breakdown</h3><p>Orange rows still need a product cost.</p></div></div>
+              <div class="table-scroll"><table><thead><tr><th>#</th><th>SKU ID</th><th class="number">Net units</th><th class="number">Settlement</th><th class="number">Product cost</th><th class="number">Profit / unit</th><th class="number">Total profit</th></tr></thead><tbody id="fk_skuTableBody"></tbody></table></div>
+            </section>
+
+            <section class="loss-panel">
+              <div><span class="loss-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M7 12h10m-7 5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><div><h3>Additional return or damage loss</h3><p>Deduct missing items, damaged goods, or packaging waste.</p></div></div>
+              <div class="inline-form"><label class="currency-input"><span>₹</span><input type="number" id="fk_lossInput" min="0" step="0.01" value="0"></label><button id="fk_recalcBtn" class="button button--success" type="button">Update result</button></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="settingsWorkspace" class="workspace hidden" aria-labelledby="settingsHeading">
+          <div class="workspace-heading"><div><span class="eyebrow">Account</span><h2 id="settingsHeading">Settings</h2><p>Review your access, save marketplace label sizes, choose your print logo, and manage Meesho store links.</p></div></div>
+          <div class="settings-grid">
+            <section class="panel plan-panel">
+              <div class="panel-heading"><div><span class="step-number step-number--muted"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" stroke-width="1.8"/><path d="M4 21a8 8 0 0 1 16 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><div><h3>Account details</h3><p>Your current sign-in and plan.</p></div></div></div>
+              <dl class="account-details"><div><dt>Name</dt><dd id="set_userName">—</dd></div><div><dt>Email</dt><dd id="set_userEmail">—</dd></div></dl>
+              <div class="plan-stats"><div><span>Active plan</span><strong id="set_planType">—</strong></div><div><span>Time remaining</span><strong id="set_daysLeft">—</strong></div></div>
+            </section>
+
+            <section class="panel format-panel">
+              <div class="panel-heading"><div><span class="step-number step-number--muted"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><h3>Default label sizes</h3><p>These print options open automatically when you choose each marketplace.</p></div></div></div>
+              <div class="format-fields">
+                <label class="field"><span>Flipkart default</span><select id="set_fkFormat"><option value="fk-4x6-no-inv">4 × 6 in · label only</option><option value="fk-4x6-with-inv">4 × 6 in · label + invoice</option><option value="fk-3x5-no-inv">3 × 5 in · label only</option><option value="fk-3x5-with-inv">3 × 5 in · label + invoice</option></select></label>
+                <label class="field"><span>Meesho default</span><select id="set_msFormat"><option value="ms-3x5-no-inv">3 × 5 in · label only</option><option value="ms-3x5-with-inv">3 × 5 in · label + invoice</option><option value="ms-3x5-with-inv-store">3 × 5 in · label + invoice + store QR</option><option value="ms-4x4-with-inv">4 × 4 in · combined label</option><option value="ms-4x6-with-inv">4 × 6 in · label + store QR</option></select></label>
+              </div>
+              <div class="format-save-row"><button id="set_saveFormatsBtn" class="button button--primary" type="button">Save label defaults</button><p id="set_formatMessage" class="setting-feedback" aria-live="polite"></p></div>
+            </section>
+
+            <section class="panel brand-panel">
+              <div class="panel-heading"><div><span class="step-number step-number--muted"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 5h14v14H5zM8 15l2.7-3 2.2 2.3 1.7-1.8L18 16M15.5 9h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><h3>Default label logo</h3><p>Saved to your account and used for both marketplaces.</p></div></div></div>
+              <div class="account-logo-preview">
+                <span><img id="set_logoPreview" src="./S_3.jpg" alt="Current default label logo"></span>
+                <div><strong id="set_logoStatus">Shegur's default</strong><p>The image is converted to sharp black artwork for thermal printing.</p></div>
+              </div>
+              <div class="brand-actions">
+                <label class="button button--primary brand-upload" for="set_logoInput">Upload my logo<input id="set_logoInput" type="file" accept="image/png,image/jpeg,image/webp"></label>
+                <button id="set_resetLogoBtn" class="button button--secondary" type="button">Use Shegur's default</button>
+              </div>
+              <p id="set_logoMessage" class="setting-feedback" aria-live="polite"></p>
+            </section>
+
+            <section class="panel store-panel">
+              <div class="panel-heading"><div><span class="step-number step-number--muted"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10h16M6 10V7l2-4h8l2 4v3M6 10v10h12V10M9 20v-6h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><h3>Meesho store QR links</h3><p>Match “Sold By” text and add your store QR automatically.</p></div></div></div>
+              <div class="store-form"><label class="field"><span>Store name match</span><input type="text" id="set_storeName" placeholder="e.g. VIPUL TEXTILES" maxlength="80"></label><label class="field"><span>Store URL</span><input type="url" id="set_storeUrl" placeholder="https://www.meesho.com/..." maxlength="500"></label><button id="set_addStoreBtn" class="button button--primary" type="button">Add store</button></div>
+              <div class="store-table"><table><thead><tr><th>Store name match</th><th>QR destination</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="set_storeList"></tbody></table></div>
+              <div id="set_storeEmpty" class="empty-state">No store links added yet.</div>
+            </section>
+          </div>
+        </section>
+
+        <section id="adminPanel" class="workspace hidden" aria-labelledby="adminHeading">
+          <div class="workspace-heading"><div><span class="eyebrow">Administration</span><h2 id="adminHeading">User access</h2><p>Review subscriptions and enter a positive or negative number to add or reduce access days.</p></div></div>
+          <section class="panel admin-cloud-panel"><div class="panel-heading"><div><span class="step-number">☁</span><div><h3>Private PDF storage</h3><p>Connect the free Supabase project after deploying the included secure gateway.</p></div></div></div><div class="store-form"><label class="field field--full"><span>Supabase Project URL</span><input id="admin_supabaseUrl" type="url" placeholder="https://your-project.supabase.co" autocomplete="off"></label><button id="admin_saveSupabaseBtn" class="button button--primary" type="button">Connect Supabase</button></div><p id="admin_supabaseMessage" class="setting-feedback" aria-live="polite"></p></section>
+          <section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>User</th><th>Role</th><th>Plan</th><th>Access</th><th>Adjust days</th></tr></thead><tbody id="adminUserTableBody"></tbody></table></div></section>
+        </section>
+      </main>
+
+    </div>
+  </div>
+
+  <div id="loader" class="processing-overlay hidden" role="status" aria-live="polite" aria-busy="true">
+    <div class="processing-card">
+      <div class="processing-top"><span class="spinner" aria-hidden="true"></span><div><strong id="loaderText">Processing labels…</strong><span id="loaderPercent">0%</span></div></div>
+      <div id="loaderBarContainer" class="progress-track"><div id="loaderProgressBar" class="progress-bar" style="width:0%"></div></div>
+      <p>Please keep this tab open while your print file is prepared.</p>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('error', (event) => {
+      const banner = document.getElementById('syntaxErrorBanner');
+      if (!banner) return;
+      banner.textContent = `Something went wrong: ${event.message}`;
+      banner.classList.remove('hidden');
+    });
+  </script>
+  <script type="module" src="./firebase-config.js"></script>
+  <script type="module" src="./auth.js"></script>
+  <script type="module" src="./dashboard.js"></script>
+  <script type="module" src="./labelCutter.js"></script>
+  <script type="module" src="./flipkartPnl.js"></script>
+  <script type="module" src="./businessTools.js"></script>
+  <script type="module" src="./skuMaster.js"></script>
+  <script type="module" src="./cloudLibrary.js"></script>
+  <script type="module" src="./team.js"></script>
+</body>
+</html>

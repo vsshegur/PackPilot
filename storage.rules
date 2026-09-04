@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function email() {
+      return request.auth.token.email.lower();
+    }
+
+    function userData(uid) {
+      return firestore.get(/databases/(default)/documents/users/$(uid)).data;
+    }
+
+    function invite() {
+      return firestore.get(/databases/(default)/documents/managerInvites/$(email())).data;
+    }
+
+    function pdfData(ownerUid, pdfId) {
+      return firestore.get(/databases/(default)/documents/users/$(ownerUid)/pdfs/$(pdfId)).data;
+    }
+
+    function isOwner(ownerUid) {
+      return signedIn() && request.auth.uid == ownerUid && userData(ownerUid).role in ['seller', 'seller_owner', 'platform_super_admin', 'admin'];
+    }
+
+    function isManager(ownerUid) {
+      return signedIn() && invite().ownerUid == ownerUid && invite().status in ['pending', 'accepted'];
+    }
+
+    match /sellerPdfs/{ownerUid}/{pdfId} {
+      allow read: if signedIn()
+        && request.time.toMillis() < pdfData(ownerUid, pdfId).expiresAt
+        && (isOwner(ownerUid) || isManager(ownerUid));
+      allow create: if isOwner(ownerUid)
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf';
+      allow update, delete: if isOwner(ownerUid);
+    }
+  }
+}
