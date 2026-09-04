@@ -188,7 +188,7 @@
               <div class="role-grid">
                 <article><span>01</span><h3>Platform Super Admin</h3><p>Manage users, subscriptions and signed day adjustments across the platform.</p><small>Platform control</small></article>
                 <article class="role-card--accent"><span>02</span><h3>Seller</h3><p>Open a private dashboard, generate labels, run business tools, save cloud PDFs, manage defaults and invite operations staff.</p><small>Private seller workspace</small></article>
-                <article><span>03</span><h3>Operations Manager</h3><p>Sign in with the invited Google email and access only that Seller's unexpired print PDFs.</p><small>View and download only</small></article>
+                <article><span>03</span><h3>Operations Manager</h3><p>Accept a Seller's invitation, then open only the ready-to-print PDFs that Seller explicitly shared. Existing Seller accounts are never converted without consent.</p><small>PDF-only access</small></article>
               </div>
             </section>
 
@@ -388,19 +388,20 @@
 
         <section id="cloudLibraryWorkspace" class="workspace hidden" aria-labelledby="cloudHeading">
           <div class="workspace-heading"><div><span class="eyebrow">Temporary print handoff</span><h2 id="cloudHeading">Cloud PDFs</h2><p id="cloudRoleDescription">Ready-to-print files are available to your operations team for six hours only.</p></div><button id="cloud_refreshBtn" class="button button--secondary" type="button">Refresh</button></div>
+          <div class="manager-only role-hidden manager-pdf-intro"><span>PDF-only workspace</span><div><strong>Files shared with you</strong><p id="cloud_managerOwner">Only PDFs explicitly shared by your Seller appear here. You cannot open labels, reports, settings, or any other Seller data.</p></div></div>
           <section id="cloud_ownerUpload" class="panel recent-output-panel seller-cloud-only">
             <div class="recent-output-heading"><div><span class="step-number">6h</span><div><h3>Choose a processed PDF</h3><p>Only label PDFs generated in PackPilot on this device during the last six hours can be shared.</p></div></div><button id="cloud_refreshLocalBtn" class="button button--secondary" type="button">Refresh device list</button></div>
             <div id="cloud_recentEmpty" class="empty-state">No recent processed PDFs on this device. Process a label batch first.</div>
             <div id="cloud_recentList" class="recent-output-list"></div>
           </section>
-          <div class="cloud-policy"><span>6h</span><div><strong>Private temporary access</strong><p>Only this Seller and the assigned manager can open each PDF. The Seller can delete it immediately, or automatic expiry removes it after six hours.</p></div></div>
+          <div class="cloud-policy seller-only"><span>6h</span><div><strong>Private temporary access</strong><p>Only this Seller and the assigned manager can open each PDF. The Seller can delete it immediately, or automatic expiry removes it after six hours.</p></div></div>
           <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Available print files</h3><p id="cloud_status">Loading your PDF desk…</p></div></div><div id="cloud_empty" class="empty-state hidden">No active PDFs. Process labels and share a recent output from this device.</div><div id="cloud_list" class="cloud-list"></div></section>
         </section>
 
         <section id="teamWorkspace" class="workspace hidden seller-only" aria-labelledby="teamHeading">
-          <div class="workspace-heading"><div><span class="eyebrow">Print-only access</span><h2 id="teamHeading">Operations team</h2><p>Invite a manager by Google email. After sign-in, they can see only your active cloud PDFs.</p></div></div>
-          <section class="panel invite-panel"><div><span class="step-number">@</span><div><h3>Invite Operations Manager</h3><p>Use the exact Google email they will sign in with.</p></div></div><div class="inline-form invite-form"><label class="field"><span>Email address</span><input id="team_email" type="email" placeholder="manager@example.com" maxlength="254"></label><button id="team_inviteBtn" class="button button--primary" type="button">Add manager</button></div><p id="team_message" class="setting-feedback" aria-live="polite"></p></section>
-          <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Invited managers</h3><p>Revoke an invitation to remove future access.</p></div></div><div class="table-scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody id="team_body"></tbody></table></div><div id="team_empty" class="empty-state">No operations managers invited yet.</div></section>
+          <div class="workspace-heading"><div><span class="eyebrow">Print-only access</span><h2 id="teamHeading">Operations team</h2><p>Invite a manager by Google email. They must accept before they can see the PDFs you share.</p></div></div>
+          <section class="panel invite-panel"><div><span class="step-number">@</span><div><h3>Invite Operations Manager</h3><p>Use the exact Google email they will sign in with. Registered Sellers receive an accept-or-reject warning.</p></div></div><div class="inline-form invite-form"><label class="field"><span>Email address</span><input id="team_email" type="email" placeholder="manager@example.com" maxlength="254"></label><button id="team_inviteBtn" class="button button--primary" type="button">Send invitation</button></div><p id="team_message" class="setting-feedback" aria-live="polite"></p></section>
+          <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Manager invitations</h3><p>Access starts only after acceptance. Revoke at any time to remove PDF access.</p></div></div><div class="table-scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Invited</th><th></th></tr></thead><tbody id="team_body"></tbody></table></div><div id="team_empty" class="empty-state">No operations managers invited yet.</div></section>
         </section>
 
         <section id="fkPnlWorkspace" class="workspace hidden" aria-labelledby="pnlHeading">
@@ -489,6 +490,19 @@
       </main>
 
     </div>
+  </div>
+
+  <div id="managerInviteDialog" class="invitation-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="managerInviteTitle" aria-describedby="managerInviteDescription">
+    <section class="invitation-card">
+      <div class="invitation-icon" aria-hidden="true">@</div>
+      <span class="eyebrow">Operations Manager invitation</span>
+      <h2 id="managerInviteTitle">A Seller invited you</h2>
+      <p id="managerInviteDescription"><strong id="managerInviteSeller">A PackPilot Seller</strong> wants to share ready-to-print PDFs with this Google account.</p>
+      <div id="managerInviteSellerWarning" class="invitation-warning hidden"><strong>You already have a Seller account</strong><p>Accepting changes this login to an Operations Manager workspace. Your Seller data remains stored, but you will see only the inviting Seller's shared PDFs until the assignment is revoked.</p></div>
+      <div class="invitation-permissions"><span><b>✓</b> Preview and download shared PDFs</span><span><b>✓</b> See filename, marketplace, format, quantity and expiry</span><span class="denied"><b>×</b> No label tools, profit reports, SKUs, settings or deletion</span></div>
+      <div class="invitation-actions"><button id="managerInviteReject" class="button button--secondary" type="button">Reject and stay Seller</button><button id="managerInviteAccept" class="button button--primary" type="button">Accept manager role</button></div>
+      <p class="invitation-footnote">Nothing changes until you choose. The inviting Seller can revoke access at any time.</p>
+    </section>
   </div>
 
   <div id="loader" class="processing-overlay hidden" role="status" aria-live="polite" aria-busy="true">
