@@ -131,6 +131,10 @@ function renderRecentProcessedPdfs() {
 async function loadCloudPdfs() {
   const uid = sellerUid();
   if (!uid || !window.appState?.currentUser) return;
+  const manager = window.appState?.role === 'operations_manager';
+  el('cloud_empty').textContent = manager
+    ? 'Your Seller has not shared any active PDFs. Only explicitly shared files appear here.'
+    : 'No active PDFs. Process labels and share a recent output from this device.';
   el('cloud_status').textContent = 'Checking active files…';
   try {
     const result = await cloudGateway('list', { sellerUid: uid });
@@ -138,7 +142,9 @@ async function loadCloudPdfs() {
       ? result.files.filter(item => Number(item.expiresAt) > Date.now()).sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
       : [];
     renderCloudPdfs();
-    el('cloud_status').textContent = `${activeItems.length} active ${activeItems.length === 1 ? 'file' : 'files'} · private to this Seller and assigned manager`;
+    el('cloud_status').textContent = manager
+      ? `${activeItems.length} ${activeItems.length === 1 ? 'shared PDF' : 'shared PDFs'} available to you`
+      : `${activeItems.length} active ${activeItems.length === 1 ? 'file' : 'files'} · private to this Seller and accepted manager`;
   } catch (error) {
     activeItems = [];
     renderCloudPdfs();
@@ -165,8 +171,9 @@ function renderCloudPdfs() {
     title.textContent = item.fileName || 'Print file.pdf';
     title.title = item.fileName || '';
     const created = new Date(Number(item.createdAt)).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const format = item.format ? ` · ${item.format}` : '';
     const batch = item.totalOrders ? ` · ${item.totalOrders} orders · ${item.totalPieces || 0} pieces` : '';
-    detail.textContent = `${String(item.platform || 'uploaded').toUpperCase()} · ${formatBytes(Number(item.size) || 0)}${batch} · added ${created}`;
+    detail.textContent = `${String(item.platform || 'uploaded').toUpperCase()}${format} · ${formatBytes(Number(item.size) || 0)}${batch} · shared ${created}`;
     copy.append(title, detail);
     expiry.className = 'expiry-chip';
     expiry.dataset.expiry = String(item.expiresAt);
