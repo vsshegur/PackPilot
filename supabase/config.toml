@@ -1,0 +1,5 @@
+[functions.pdf-gateway]
+verify_jwt = false
+
+[functions.delete-expired-pdfs]
+verify_jwt = false
