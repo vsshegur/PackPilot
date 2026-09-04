@@ -21,6 +21,13 @@ function findColumn(headers, tests) {
   return headers.findIndex(header => tests.some(test => test(header)));
 }
 
+function findColumns(headers, tests) {
+  return headers.reduce((indexes, header, index) => {
+    if (tests.some(test => test(header))) indexes.push(index);
+    return indexes;
+  }, []);
+}
+
 function findHeader(rows, requiredGroups) {
   for (let index = 0; index < Math.min(rows.length, 60); index += 1) {
     const headers = (rows[index] || []).map(normalize);
@@ -53,20 +60,131 @@ function findRows(workbook, requiredGroups) {
   return null;
 }
 
+function findAllRows(workbook, requiredGroups) {
+  return workbook.SheetNames.flatMap(name => {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '', raw: true });
+    const header = findHeader(rows, requiredGroups);
+    return header ? [{ rows, ...header, sheetName: name }] : [];
+  });
+}
+
 const SKU_TESTS = [h => h === 'sku', h => h.includes('sku id'), h => h.includes('seller sku'), h => h.includes('supplier sku'), h => h.includes('supplier sku code')];
 const QTY_TESTS = [h => h === 'qty', h => h.includes('quantity'), h => h.includes('net units'), h => h.includes('net qty')];
 const AMOUNT_TESTS = [h => h.includes('settlement amount'), h => h.includes('net settlement'), h => h.includes('amount settled'), h => h.includes('bank settlement'), h => h.includes('payable amount'), h => h === 'settlement'];
 const ORDER_TESTS = [h => h === 'order id', h => h.includes('sub order id'), h => h.includes('suborder id'), h => h.includes('sub order no'), h => h.includes('suborder no'), h => h === 'order no', h => h.includes('order number')];
 const DATE_TESTS = [h => h.includes('dispatch date'), h => h.includes('dispatch time'), h => h.includes('order date'), h => h.includes('ordered date'), h => h === 'date'];
-const STATUS_TESTS = [h => h === 'status', h => h.includes('order status'), h => h.includes('shipment status')];
-const PAYMENT_STATUS_TESTS = [h => h.includes('payment status'), h => h.includes('settlement status'), h => h === 'status'];
-const RETURN_TYPE_TESTS = [h => h.includes('return type'), h => h.includes('return status'), h => h.includes('return reason'), h => h === 'type', h => h === 'status'];
+const STATUS_TESTS = [
+  h => h.includes('status'),
+  h => h.includes('cancel'),
+  h => h === 'status',
+  h => h.includes('order status'),
+  h => h.includes('sub order status'),
+  h => h.includes('shipment status'),
+  h => h.includes('shipping status'),
+  h => h.includes('delivery status'),
+  h => h.includes('final status'),
+  h => h.includes('current status'),
+  h => h.includes('order state'),
+  h => h.includes('cancellation status'),
+  h => h.includes('cancel reason')
+];
+const PAYMENT_STATUS_TESTS = [h => h.includes('payment status'), h => h.includes('settlement status'), h => h.includes('payment state'), h => h.includes('settlement state'), h => h === 'status'];
+const RETURN_TYPE_TESTS = [
+  h => h.includes('return'),
+  h => h.includes('rto'),
+  h => h.includes('reverse'),
+  h => h.includes('refund'),
+  h => h.includes('reason'),
+  h => h.includes('shipment status'),
+  h => h.includes('delivery status'),
+  h => h.includes('final status'),
+  h => h === 'type',
+  h => h === 'status'
+];
 const msReports = { orders: null, payments: null, returns: null };
+const msPaymentFiles = new Map();
 let msProfitItems = [];
 const msCostTimers = new Map();
 
 function orderId(value) {
-  return String(value ?? '').trim().replace(/\.0$/, '');
+  return String(value ?? '').trim().replace(/^['"]+|['"]+$/g, '').replace(/\s+/g, '').replace(/\.0$/, '');
+}
+
+function orderIdColumns(headers) {
+  return findColumns(headers, ORDER_TESTS).sort((left, right) => {
+    const score = header => header.includes('sub order') || header.includes('suborder') ? 0 : 1;
+    return score(headers[left]) - score(headers[right]) || left - right;
+  });
+}
+
+function rowOrderIds(row, indexes) {
+  return [...new Set(indexes.map(index => orderId(row[index])).filter(id => id && !/^(total|nan|undefined|null)$/i.test(id)))];
+}
+
+function rowText(row, indexes) {
+  return indexes.map(index => String(row[index] ?? '').trim()).filter(Boolean).join(' ');
+}
+
+function mergePaymentRecords(records, fileCount) {
+  const entriesByPrimary = new Map();
+  records.forEach(record => {
+    const primaryId = record.ids[0];
+    const target = entriesByPrimary.get(primaryId) || { primaryId, aliases: new Set(), transactions: new Map() };
+    record.ids.forEach(id => target.aliases.add(id));
+    target.transactions.set(record.fingerprint, record);
+    entriesByPrimary.set(primaryId, target);
+  });
+
+  const entries = [...entriesByPrimary.values()];
+  entries.forEach(entry => {
+    const transactions = [...entry.transactions.values()];
+    entry.amount = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+    entry.completed = transactions.some(transaction => transaction.completed);
+    entry.paymentDates = transactions.flatMap(transaction => transaction.paymentDate ? [transaction.paymentDate] : []);
+    entry.statusText = transactions.map(transaction => transaction.status).filter(Boolean).join(' ');
+  });
+
+  const aliasMatches = new Map();
+  entries.forEach(entry => entry.aliases.forEach(alias => {
+    const matches = aliasMatches.get(alias) || new Set();
+    matches.add(entry);
+    aliasMatches.set(alias, matches);
+  }));
+  const lookup = new Map();
+  aliasMatches.forEach((matches, alias) => {
+    if (matches.size === 1) lookup.set(alias, [...matches][0]);
+  });
+
+  return {
+    lookup,
+    orderCount: entries.length,
+    transactionCount: entries.reduce((sum, entry) => sum + entry.transactions.size, 0),
+    fileCount
+  };
+}
+
+function findReportEntry(report, ids, orderAliasUse = null) {
+  if (!report?.lookup) return null;
+  for (const id of ids) {
+    if (orderAliasUse && Number(orderAliasUse.get(id) || 0) > 1) continue;
+    const entry = report.lookup.get(id);
+    if (entry) return entry;
+  }
+  return null;
+}
+
+function setMeeshoPeriodFromOrders(rows) {
+  const dates = rows.map(row => row.date).filter(Boolean).sort((left, right) => left - right);
+  if (!dates.length) return;
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  if (first.getFullYear() === last.getFullYear() && first.getMonth() === last.getMonth()) {
+    el('ms_fromDate').value = inputDate(new Date(first.getFullYear(), first.getMonth(), 1));
+    el('ms_toDate').value = inputDate(new Date(first.getFullYear(), first.getMonth() + 1, 0));
+  } else {
+    el('ms_fromDate').value = inputDate(first);
+    el('ms_toDate').value = inputDate(last);
+  }
 }
 
 function parseDateValue(value) {
@@ -124,18 +242,22 @@ function updateMeeshoRunState() {
 async function parseMeeshoOrders(file) {
   const match = findRows(await readWorkbook(file), [ORDER_TESTS, SKU_TESTS, DATE_TESTS]);
   if (!match) throw new Error('Orders report needs Order ID, SKU and order/dispatch date columns.');
-  const idIndex = findColumn(match.headers, ORDER_TESTS);
+  const idIndexes = orderIdColumns(match.headers);
   const skuIndex = findColumn(match.headers, SKU_TESTS);
   const dateIndex = findColumn(match.headers, DATE_TESTS);
   const quantityIndex = findColumn(match.headers, QTY_TESTS);
-  const statusIndex = findColumn(match.headers, STATUS_TESTS);
-  const rows = match.rows.slice(match.index + 1).map(row => ({
-    id: orderId(row[idIndex]),
-    sku: String(row[skuIndex] ?? '').trim(),
-    date: parseDateValue(row[dateIndex]),
-    qty: Math.max(1, Math.abs(number(quantityIndex >= 0 ? row[quantityIndex] : 1)) || 1),
-    status: statusIndex >= 0 ? String(row[statusIndex] ?? '').trim() : ''
-  })).filter(row => row.id && row.sku && row.date);
+  const statusIndexes = findColumns(match.headers, STATUS_TESTS);
+  const rows = match.rows.slice(match.index + 1).map(row => {
+    const ids = rowOrderIds(row, idIndexes);
+    return {
+      id: ids[0] || '',
+      ids,
+      sku: String(row[skuIndex] ?? '').trim(),
+      date: parseDateValue(row[dateIndex]),
+      qty: Math.max(1, Math.abs(number(quantityIndex >= 0 ? row[quantityIndex] : 1)) || 1),
+      status: rowText(row, statusIndexes)
+    };
+  }).filter(row => row.id && row.sku && row.date);
   if (!rows.length) throw new Error('No dated order rows were found in the selected orders report.');
   return rows;
 }
@@ -143,62 +265,142 @@ async function parseMeeshoOrders(file) {
 async function parseMeeshoPayments(file) {
   const match = findRows(await readWorkbook(file), [ORDER_TESTS, AMOUNT_TESTS]);
   if (!match) throw new Error('Payment report needs Order ID and final settlement amount columns.');
-  const idIndex = findColumn(match.headers, ORDER_TESTS);
+  const idIndexes = orderIdColumns(match.headers);
   const amountIndex = findColumn(match.headers, AMOUNT_TESTS);
-  const statusIndex = findColumn(match.headers, PAYMENT_STATUS_TESTS);
-  const paymentDateIndex = findColumn(match.headers, [h => h.includes('payment date'), h => h.includes('settlement date')]);
-  const payments = new Map();
+  const statusIndexes = findColumns(match.headers, PAYMENT_STATUS_TESTS);
+  const paymentDateIndexes = findColumns(match.headers, [
+    h => h.includes('payment date'),
+    h => h.includes('settlement date'),
+    h => h.includes('deposit date'),
+    h => h.includes('paid date')
+  ]);
+  const referenceIndexes = findColumns(match.headers, [
+    h => h.includes('transaction id'),
+    h => h.includes('settlement id'),
+    h => h.includes('reference id'),
+    h => h.includes('utr')
+  ]);
+  const detailIndexes = findColumns(match.headers, [
+    h => h.includes('payment type'),
+    h => h.includes('transaction type'),
+    h => h.includes('amount type'),
+    h => h.includes('component'),
+    h => h.includes('particular'),
+    h => h.includes('description'),
+    h => h.includes('reason')
+  ]);
+  const records = [];
   match.rows.slice(match.index + 1).forEach(row => {
-    const id = orderId(row[idIndex]);
-    if (!id) return;
-    const status = statusIndex >= 0 ? String(row[statusIndex] ?? '').trim().toLowerCase() : '';
+    const ids = rowOrderIds(row, idIndexes);
+    if (!ids.length) return;
+    const status = rowText(row, statusIndexes).toLowerCase();
     const explicitlyPending = /(pending|processing|hold|upcoming|not paid|not settled)/i.test(status);
-    const explicitlyComplete = /(paid|complete|completed|settled|processed|success|credited|released)/i.test(status);
-    const item = payments.get(id) || { amount: 0, completed: false, paymentDates: [] };
-    item.amount += number(row[amountIndex]);
-    item.completed = item.completed || (!status ? true : (explicitlyComplete && !explicitlyPending));
-    const paymentDate = paymentDateIndex >= 0 ? parseDateValue(row[paymentDateIndex]) : null;
-    if (paymentDate) item.paymentDates.push(paymentDate);
-    payments.set(id, item);
+    const explicitlyComplete = /(paid|complete|completed|settled|processed|success|successful|credited|released|deposited|transferred)/i.test(status);
+    const paymentDate = paymentDateIndexes.map(index => parseDateValue(row[index])).find(Boolean) || null;
+    const reference = rowText(row, referenceIndexes);
+    const detail = rowText(row, detailIndexes);
+    const amount = number(row[amountIndex]);
+    const paymentDay = paymentDate ? inputDate(paymentDate) : '';
+    records.push({
+      ids,
+      amount,
+      completed: !status ? true : (explicitlyComplete && !explicitlyPending),
+      paymentDate,
+      status,
+      fingerprint: [ids.slice().sort().join('|'), normalize(reference), amount.toFixed(2), normalize(status), paymentDay, normalize(detail)].join('|')
+    });
   });
-  if (!payments.size) throw new Error('No payment rows were found in the selected report.');
-  return payments;
+  if (!records.length) throw new Error('No payment rows were found in the selected report.');
+  return records;
 }
 
 async function parseMeeshoReturns(file) {
   const workbook = await readWorkbook(file);
-  const match = findRows(workbook, [ORDER_TESTS]);
-  if (!match) throw new Error('Returns report needs an Order ID or Sub Order ID column.');
-  const idIndex = findColumn(match.headers, ORDER_TESTS);
-  const typeIndex = findColumn(match.headers, RETURN_TYPE_TESTS);
-  const returns = new Map();
-  match.rows.slice(match.index + 1).forEach(row => {
-    const id = orderId(row[idIndex]);
-    if (!id) return;
-    const type = typeIndex >= 0 ? String(row[typeIndex] ?? '').trim() : 'Customer return';
-    returns.set(id, `${returns.get(id) || ''} ${type}`.trim());
+  const matches = findAllRows(workbook, [ORDER_TESTS]);
+  if (!matches.length) throw new Error('Returns report needs an Order ID or Sub Order ID column.');
+  const entriesByPrimary = new Map();
+  matches.forEach(match => {
+    const idIndexes = orderIdColumns(match.headers);
+    const typeIndexes = findColumns(match.headers, RETURN_TYPE_TESTS);
+    match.rows.slice(match.index + 1).forEach(row => {
+      const ids = rowOrderIds(row, idIndexes);
+      if (!ids.length) return;
+      const primaryId = ids[0];
+      const target = entriesByPrimary.get(primaryId) || { primaryId, aliases: new Set(), details: new Set() };
+      ids.forEach(id => target.aliases.add(id));
+      target.details.add([match.sheetName, rowText(row, typeIndexes) || 'Customer return'].filter(Boolean).join(' '));
+      entriesByPrimary.set(primaryId, target);
+    });
   });
-  return returns;
+  const entries = [...entriesByPrimary.values()];
+  entries.forEach(entry => { entry.statusText = [...entry.details].join(' '); });
+  const aliasMatches = new Map();
+  entries.forEach(entry => entry.aliases.forEach(alias => {
+    const matches = aliasMatches.get(alias) || new Set();
+    matches.add(entry);
+    aliasMatches.set(alias, matches);
+  }));
+  const lookup = new Map();
+  aliasMatches.forEach((matchesForAlias, alias) => {
+    if (matchesForAlias.size === 1) lookup.set(alias, [...matchesForAlias][0]);
+  });
+  return { lookup, orderCount: entries.length };
 }
 
 async function chooseMeeshoReport(kind, file) {
   const status = el(`ms_${kind}Status`);
   status.textContent = `Reading ${file.name}…`;
   try {
-    if (kind === 'orders') msReports.orders = await parseMeeshoOrders(file);
-    if (kind === 'payments') msReports.payments = await parseMeeshoPayments(file);
+    if (kind === 'orders') {
+      msReports.orders = await parseMeeshoOrders(file);
+      setMeeshoPeriodFromOrders(msReports.orders);
+    }
     if (kind === 'returns') msReports.returns = await parseMeeshoReturns(file);
-    const count = kind === 'orders' ? msReports.orders.length : msReports[kind].size;
+    const count = kind === 'orders' ? msReports.orders.length : msReports[kind].orderCount;
     status.textContent = `${file.name} · ${count.toLocaleString('en-IN')} ${kind === 'orders' ? 'rows' : 'order IDs'}`;
   } catch (error) {
     msReports[kind] = null;
     status.textContent = `Could not use ${file.name}`;
     alert(error.message);
   }
+  el('ms_pnlResults').classList.add('hidden');
   updateMeeshoRunState();
 }
 
-['orders', 'payments', 'returns'].forEach(kind => {
+async function addMeeshoPaymentReports(files) {
+  const status = el('ms_paymentsStatus');
+  const freshFiles = files.filter(file => !msPaymentFiles.has(`${file.name}|${file.size}|${file.lastModified}`));
+  if (!freshFiles.length) {
+    status.textContent = msPaymentFiles.size ? `${msPaymentFiles.size} payment ${msPaymentFiles.size === 1 ? 'file' : 'files'} already added.` : 'Choose one or more payment reports.';
+    return;
+  }
+
+  status.textContent = `Reading ${freshFiles.length} payment ${freshFiles.length === 1 ? 'file' : 'files'}…`;
+  const results = await Promise.allSettled(freshFiles.map(async file => ({
+    key: `${file.name}|${file.size}|${file.lastModified}`,
+    file,
+    records: await parseMeeshoPayments(file)
+  })));
+  const errors = [];
+  results.forEach(result => {
+    if (result.status === 'fulfilled') msPaymentFiles.set(result.value.key, result.value);
+    else errors.push(result.reason?.message || 'A payment report could not be read.');
+  });
+
+  const allRecords = [...msPaymentFiles.values()].flatMap(item => item.records);
+  msReports.payments = allRecords.length ? mergePaymentRecords(allRecords, msPaymentFiles.size) : null;
+  if (msReports.payments) {
+    const report = msReports.payments;
+    status.textContent = `${report.fileCount} payment ${report.fileCount === 1 ? 'file' : 'files'} · ${report.orderCount.toLocaleString('en-IN')} order IDs · ${report.transactionCount.toLocaleString('en-IN')} unique rows`;
+    status.title = [...msPaymentFiles.values()].map(item => item.file.name).join('\n');
+    el('ms_clearPaymentsBtn').classList.remove('hidden');
+  }
+  if (errors.length) alert([...new Set(errors)].join('\n'));
+  el('ms_pnlResults').classList.add('hidden');
+  updateMeeshoRunState();
+}
+
+['orders', 'returns'].forEach(kind => {
   el(`ms_${kind}Input`).addEventListener('change', event => {
     const file = event.target.files[0];
     event.target.value = '';
@@ -206,8 +408,26 @@ async function chooseMeeshoReport(kind, file) {
   });
 });
 
-el('ms_fromDate').addEventListener('change', updateMeeshoRunState);
-el('ms_toDate').addEventListener('change', updateMeeshoRunState);
+el('ms_paymentsInput').addEventListener('change', event => {
+  const files = Array.from(event.target.files || []);
+  event.target.value = '';
+  if (files.length) addMeeshoPaymentReports(files);
+});
+
+el('ms_clearPaymentsBtn').addEventListener('click', () => {
+  msPaymentFiles.clear();
+  msReports.payments = null;
+  el('ms_paymentsStatus').textContent = 'Add every settlement file issued for the selected order month, including later months.';
+  el('ms_paymentsStatus').removeAttribute('title');
+  el('ms_clearPaymentsBtn').classList.add('hidden');
+  el('ms_pnlResults').classList.add('hidden');
+  updateMeeshoRunState();
+});
+
+['ms_fromDate', 'ms_toDate'].forEach(id => el(id).addEventListener('change', () => {
+  el('ms_pnlResults').classList.add('hidden');
+  updateMeeshoRunState();
+}));
 
 function skuCosts(sku) {
   if (typeof window.getSkuCostBreakdown === 'function') return window.getSkuCostBreakdown('meesho', sku);
@@ -233,11 +453,14 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   if (!rows.length) return alert('No order rows were found inside the selected date range.');
   const groupedOrders = new Map();
   rows.forEach(row => {
-    const order = groupedOrders.get(row.id) || { id: row.id, rows: [], status: '' };
+    const order = groupedOrders.get(row.id) || { id: row.id, ids: new Set(), rows: [], status: '' };
+    row.ids.forEach(id => order.ids.add(id));
     order.rows.push(row);
     order.status += ` ${row.status}`;
     groupedOrders.set(row.id, order);
   });
+  const orderAliasUse = new Map();
+  groupedOrders.forEach(order => order.ids.forEach(id => orderAliasUse.set(id, (orderAliasUse.get(id) || 0) + 1)));
 
   let dispatched = 0;
   let cancelled = 0;
@@ -249,11 +472,12 @@ el('ms_runPnlBtn').addEventListener('click', () => {
 
   groupedOrders.forEach(order => {
     const status = order.status.toLowerCase();
-    const returnText = String(msReports.returns.get(order.id) || '').toLowerCase();
-    const isCancelled = /cancel/.test(status);
-    const isRto = /\brto\b|return to origin/.test(`${status} ${returnText}`);
-    const isCustomerReturn = !isRto && Boolean(returnText) && /return|refund|customer/.test(returnText);
-    const payment = msReports.payments.get(order.id);
+    const returnEntry = findReportEntry(msReports.returns, order.ids, orderAliasUse);
+    const returnText = String(returnEntry?.statusText || '').toLowerCase();
+    const isCancelled = /\bcancell?ed\b|\bcancellation\b|\bcancelled by\b/.test(status);
+    const isRto = !isCancelled && /\brto\b|return(?:ed)? to origin|courier return|undeliverable/.test(`${status} ${returnText}`);
+    const isCustomerReturn = !isCancelled && !isRto && Boolean(returnEntry);
+    const payment = findReportEntry(msReports.payments, order.ids, orderAliasUse);
     const isCompleted = Boolean(payment?.completed) && !isCancelled;
     if (!isCancelled) dispatched += 1;
     if (isCancelled) cancelled += 1;
@@ -285,7 +509,8 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   el('ms_kpiPending').textContent = pending.toLocaleString('en-IN');
   el('ms_periodLabel').textContent = `${from.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} — ${to.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
   el('ms_completedHeadline').textContent = `${completed.toLocaleString('en-IN')} completed-payment ${completed === 1 ? 'order' : 'orders'} used for profit`;
-  el('ms_pnlStatus').textContent = `${groupedOrders.size.toLocaleString('en-IN')} orders checked · ${completed.toLocaleString('en-IN')} with completed payments`;
+  const paymentFileCount = msReports.payments.fileCount || 1;
+  el('ms_pnlStatus').textContent = `${groupedOrders.size.toLocaleString('en-IN')} orders checked · ${completed.toLocaleString('en-IN')} settled · ${(rto + customerReturn).toLocaleString('en-IN')} return/RTO matches · ${paymentFileCount} payment ${paymentFileCount === 1 ? 'file' : 'files'}`;
   el('ms_pnlResults').classList.remove('hidden');
 });
 
