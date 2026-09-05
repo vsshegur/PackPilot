@@ -655,6 +655,26 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
   const settlementIssues = [];
   const rtoLockedOrders = [];
 
+  const ensureSkuItem = (master, sourceSku) => {
+    const existing = groupedSku.get(master);
+    if (existing) return existing;
+    const item = {
+      master,
+      childSkus: new Set(),
+      totalOrders: 0,
+      cancelledOrders: 0,
+      rtoOrders: 0,
+      customerReturnOrders: 0,
+      fulfilledOrders: 0,
+      units: 0,
+      deliveredUnits: 0,
+      settlement: 0,
+      costs: skuCosts(sourceSku || master)
+    };
+    groupedSku.set(master, item);
+    return item;
+  };
+
   groupedOrders.forEach(order => {
     // Meesho commonly writes RTO_COMPLETE and RTO_LOCKED in "Reason for
     // Credit Entry". Normalize underscores and punctuation before matching.
@@ -676,6 +696,26 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
     const orderStatus = orderStatuses.join(' · ') || 'Status unavailable';
     const isDelivered = /\bdelivered\b|delivery complete(?:d)?/.test(status) && !/\bundelivered\b/.test(status);
     const isZeroSettlement = isCompleted && number(payment?.amount) <= 0;
+
+    // Count an order once per Master SKU even when the report contains more
+    // than one row or child SKU for that same packing product.
+    const orderSkuGroups = new Map();
+    order.rows.forEach(row => {
+      const master = typeof window.resolveMasterSku === 'function' ? window.resolveMasterSku('meesho', row.sku) : row.sku;
+      const group = orderSkuGroups.get(master) || { sourceSku: row.sku, childSkus: new Set() };
+      group.childSkus.add(row.sku);
+      orderSkuGroups.set(master, group);
+    });
+    orderSkuGroups.forEach((group, master) => {
+      const item = ensureSkuItem(master, group.sourceSku);
+      group.childSkus.forEach(childSku => item.childSkus.add(childSku));
+      item.totalOrders += 1;
+      if (isCancelled) item.cancelledOrders += 1;
+      if (isRto) item.rtoOrders += 1;
+      if (isCustomerReturn) item.customerReturnOrders += 1;
+      if (!isCancelled && !isRto && (isDelivered || isCustomerReturn || isCompleted)) item.fulfilledOrders += 1;
+    });
+
     if (!isCancelled) dispatched += 1;
     if (isCancelled) cancelled += 1;
     if (isRtoComplete) rtoComplete += 1;
@@ -718,7 +758,7 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
     completed += 1;
     order.rows.forEach(row => {
       const master = typeof window.resolveMasterSku === 'function' ? window.resolveMasterSku('meesho', row.sku) : row.sku;
-      const item = groupedSku.get(master) || { master, childSkus: new Set(), units: 0, deliveredUnits: 0, settlement: 0, costs: skuCosts(row.sku) };
+      const item = ensureSkuItem(master, row.sku);
       item.childSkus.add(row.sku);
       item.units += row.qty;
       if (!isRto && !isCustomerReturn) item.deliveredUnits += row.qty;
@@ -730,7 +770,12 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
   msProfitItems = Array.from(groupedSku.values());
   allocateMeeshoAdSpend(msProfitItems, msAdSpendTotal);
   msProfitItems.forEach(recalculateMeeshoItem);
-  msProfitItems.sort((a, b) => meeshoUnitCost(a.costs) <= 0 && meeshoUnitCost(b.costs) > 0 ? -1 : b.profit - a.profit);
+  msProfitItems.sort((a, b) => {
+    const aNeedsCost = a.units > 0 && meeshoUnitCost(a.costs) <= 0;
+    const bNeedsCost = b.units > 0 && meeshoUnitCost(b.costs) <= 0;
+    if (aNeedsCost !== bNeedsCost) return aNeedsCost ? -1 : 1;
+    return b.profit - a.profit || String(a.master).localeCompare(String(b.master));
+  });
   msSettlementIssues = settlementIssues.sort((a, b) => b.ageDays - a.ageDays || String(a.orderId).localeCompare(String(b.orderId)));
   renderMeeshoPnl(msProfitItems);
   renderMeeshoRtoLocked(rtoLockedOrders);
@@ -747,6 +792,7 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
   const paymentFileCount = msReports.payments.fileCount || 1;
   el('ms_pnlStatus').textContent = `${groupedOrders.size.toLocaleString('en-IN')} orders checked · ${completed.toLocaleString('en-IN')} settled · ${rtoComplete.toLocaleString('en-IN')} RTO complete · ${rtoLocked.toLocaleString('en-IN')} RTO locked · ${customerReturn.toLocaleString('en-IN')} customer returns · ${paymentFileCount} payment ${paymentFileCount === 1 ? 'file' : 'files'}`;
   el('ms_pnlResults').classList.remove('hidden');
+  requestAnimationFrame(syncMeeshoProfitScroll);
 });
 
 function meeshoUnitCost(costs) {
@@ -767,7 +813,7 @@ function meeshoTotalCostInput(item) {
   input.step = '0.01';
   input.value = meeshoUnitCost(item.costs) || '';
   input.placeholder = '0.00';
-  input.className = `cost-input${meeshoUnitCost(item.costs) <= 0 ? ' is-missing' : ''}`;
+  input.className = `cost-input${item.units > 0 && meeshoUnitCost(item.costs) <= 0 ? ' is-missing' : ''}`;
   input.setAttribute('aria-label', `Total cost per unit for ${item.master}`);
   input.addEventListener('input', () => {
     const totalCost = Math.max(0, number(input.value));
@@ -777,13 +823,13 @@ function meeshoTotalCostInput(item) {
     item.costs.packagingCost = 0;
     item.costs.labourCost = 0;
     item.costs.totalCost = totalCost;
-    input.classList.toggle('is-missing', totalCost <= 0);
+    input.classList.toggle('is-missing', item.units > 0 && totalCost <= 0);
     recalculateMeeshoItem(item);
     item.ui.profit.textContent = money(item.profit);
     item.ui.profit.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     item.ui.unitProfit.textContent = money(item.units ? item.profit / item.units : 0);
     item.ui.unitProfit.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
-    item.ui.row.classList.toggle('sku-row--missing', totalCost <= 0);
+    item.ui.row.classList.toggle('sku-row--missing', item.units > 0 && totalCost <= 0);
     updateMeeshoTotals();
     clearTimeout(msCostTimers.get(item.master));
     msCostTimers.set(item.master, setTimeout(async () => {
@@ -806,7 +852,7 @@ function renderMeeshoPnl(items) {
   if (!items.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 8;
+    cell.colSpan = 13;
     cell.textContent = 'No completed-payment orders were found in this period. Check the payment report or choose an older month.';
     row.appendChild(cell);
     body.appendChild(row);
@@ -817,6 +863,11 @@ function renderMeeshoPnl(items) {
     const row = document.createElement('tr');
     const masterCell = document.createElement('td');
     const childrenCell = document.createElement('td');
+    const totalOrdersCell = document.createElement('td');
+    const cancelledCell = document.createElement('td');
+    const rtoCell = document.createElement('td');
+    const returnsCell = document.createElement('td');
+    const returnRateCell = document.createElement('td');
     const unitsCell = document.createElement('td');
     const settlementCell = document.createElement('td');
     const adsCell = document.createElement('td');
@@ -829,10 +880,16 @@ function renderMeeshoPnl(items) {
     children.className = 'child-sku-list';
     [...item.childSkus].sort().forEach(value => { const chip = document.createElement('code'); chip.textContent = value; children.appendChild(chip); });
     childrenCell.appendChild(children);
+    totalOrdersCell.textContent = number(item.totalOrders).toLocaleString('en-IN');
+    cancelledCell.textContent = number(item.cancelledOrders).toLocaleString('en-IN');
+    rtoCell.textContent = number(item.rtoOrders).toLocaleString('en-IN');
+    returnsCell.textContent = number(item.customerReturnOrders).toLocaleString('en-IN');
+    const returnRate = item.fulfilledOrders > 0 ? (item.customerReturnOrders / item.fulfilledOrders) * 100 : 0;
+    returnRateCell.textContent = `${returnRate.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
     unitsCell.textContent = number(item.units).toLocaleString('en-IN', { maximumFractionDigits: 2 });
     settlementCell.textContent = money(item.settlement);
     adsCell.textContent = money(item.adSpend);
-    unitsCell.className = settlementCell.className = adsCell.className = 'number';
+    totalOrdersCell.className = cancelledCell.className = rtoCell.className = returnsCell.className = returnRateCell.className = unitsCell.className = settlementCell.className = adsCell.className = 'number';
     totalCostCell.appendChild(meeshoTotalCostInput(item));
     totalCostCell.className = 'number';
     unitProfitCell.textContent = money(item.units ? item.profit / item.units : 0);
@@ -840,11 +897,38 @@ function renderMeeshoPnl(items) {
     profitCell.textContent = money(item.profit);
     profitCell.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     item.ui = { row, profit: profitCell, unitProfit: unitProfitCell };
-    row.classList.toggle('sku-row--missing', meeshoUnitCost(item.costs) <= 0);
-    row.append(masterCell, childrenCell, unitsCell, settlementCell, adsCell, totalCostCell, unitProfitCell, profitCell);
+    row.classList.toggle('sku-row--missing', item.units > 0 && meeshoUnitCost(item.costs) <= 0);
+    row.append(masterCell, childrenCell, totalOrdersCell, cancelledCell, rtoCell, returnsCell, returnRateCell, unitsCell, settlementCell, adsCell, totalCostCell, unitProfitCell, profitCell);
     body.appendChild(row);
   });
+  syncMeeshoProfitScroll();
   updateMeeshoTotals();
+}
+
+function syncMeeshoProfitScroll() {
+  const top = el('ms_pnlTopScroll');
+  const bottom = el('ms_pnlTableScroll');
+  const spacer = top?.firstElementChild;
+  if (!top || !bottom || !spacer) return;
+  spacer.style.width = `${bottom.scrollWidth}px`;
+  top.classList.toggle('hidden', bottom.scrollWidth <= bottom.clientWidth + 1);
+  top.scrollLeft = bottom.scrollLeft;
+  if (top.dataset.linked === 'true') return;
+  top.dataset.linked = 'true';
+  let syncing = false;
+  top.addEventListener('scroll', () => {
+    if (syncing) return;
+    syncing = true;
+    bottom.scrollLeft = top.scrollLeft;
+    requestAnimationFrame(() => { syncing = false; });
+  });
+  bottom.addEventListener('scroll', () => {
+    if (syncing) return;
+    syncing = true;
+    top.scrollLeft = bottom.scrollLeft;
+    requestAnimationFrame(() => { syncing = false; });
+  });
+  window.addEventListener('resize', () => requestAnimationFrame(syncMeeshoProfitScroll));
 }
 
 function renderMeeshoSettlementIssues(issues) {
