@@ -460,6 +460,14 @@ document.getElementById('lc_processBtn').addEventListener('click', async () => {
       lc_cachedVersion = preparedVersion;
       document.getElementById('lc_metricTotal').textContent = lc_parsedData.length;
       document.getElementById('lc_metricPieces').textContent = lc_parsedData.reduce((s,i)=>s+i.qty,0);
+      if (typeof window.recordLabelBatch === 'function') {
+          window.recordLabelBatch({
+              platform: currentPlatform,
+              format: formatSelection,
+              totalOrders: lc_parsedData.length,
+              totalPieces: lc_parsedData.reduce((sum, item) => sum + item.qty, 0)
+          }).catch(error => console.warn('Label activity could not be counted.', error));
+      }
       document.getElementById('lc_results').classList.remove('hidden');
       document.getElementById('lc_processBtn').disabled = false;
   } catch (err) {
@@ -893,15 +901,6 @@ async function lc_generatePdf({ progressStart = 0 } = {}) {
           window.dispatchEvent(new CustomEvent('processedPdfHistoryChanged'));
       };
   }
-  if (typeof window.recordLabelBatch === 'function') {
-      window.recordLabelBatch({
-          platform: currentPlatform,
-          format: formatSelection,
-          totalOrders: lc_parsedData.length,
-          totalPieces: lc_parsedData.reduce((sum, item) => sum + item.qty, 0)
-      }).catch(error => console.warn('Private dashboard activity could not be updated.', error));
-  }
-  
   document.getElementById('loader').classList.add('hidden');
   return pdfBytes;
 }
