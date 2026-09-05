@@ -30,10 +30,11 @@ exports.aggregateProcessedLabels = onDocumentCreated({
     updatedAt: Date.now()
   };
 
-  await Promise.all([
-    db.doc('publicStats/usage').set(increments, { merge: true }),
-    db.doc(`users/${event.params.uid}/stats/labels`).set(increments, { merge: true })
-  ]);
+  // The web app updates publicStats/usage atomically with the private batch so
+  // the free Firebase setup works without a deployed Cloud Function. Keep this
+  // trigger limited to the Seller's private derived statistics to avoid double
+  // counting if Functions are enabled later.
+  await db.doc(`users/${event.params.uid}/stats/labels`).set(increments, { merge: true });
 });
 
 exports.deleteExpiredSellerPdfs = onSchedule({
