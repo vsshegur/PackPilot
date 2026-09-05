@@ -23,7 +23,7 @@ function validEmail(value) {
 
 async function loadInvitations() {
   const user = window.appState?.currentUser;
-  if (!user || window.appState.role === 'operations_manager' || !db) return;
+  if (!user || window.appState.role !== 'seller' || !db) return;
   try {
     const snapshot = await getDocs(query(collection(db, 'managerInvites'), where('ownerUid', '==', user.uid)));
     invitations = snapshot.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
@@ -93,6 +93,7 @@ async function revokeInvitation(invite) {
 
 el('team_inviteBtn').addEventListener('click', async () => {
   const user = window.appState?.currentUser;
+  if (!user || window.appState?.role !== 'seller') return;
   const email = normalizeEmail(el('team_email').value);
   if (!validEmail(email)) {
     alert('Enter a valid Google account email.');
