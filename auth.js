@@ -23,7 +23,6 @@ const APP_META = {
   labelCutter: { eyebrow: "Today's workspace", title: 'Label Cutter' },
   fkPnlCalculator: { eyebrow: 'Profit review', title: 'Flipkart P&L' },
   meeshoPnl: { eyebrow: 'Profit review', title: 'Meesho P&L' },
-  settlement: { eyebrow: 'Payment control', title: 'Reconciliation' },
   skuMaster: { eyebrow: 'Product data', title: 'SKU Master' },
   marginCalculator: { eyebrow: 'Listing decision', title: 'Margin Calculator' },
   cloudLibrary: { eyebrow: 'Print handoff', title: 'Cloud PDFs' },
@@ -32,7 +31,7 @@ const APP_META = {
 };
 
 const el = id => document.getElementById(id);
-const workspaceIds = ['dashboardWorkspace', 'labelWorkspace', 'fkPnlWorkspace', 'meeshoPnlWorkspace', 'settlementWorkspace', 'skuMasterWorkspace', 'marginWorkspace', 'cloudLibraryWorkspace', 'teamWorkspace', 'settingsWorkspace', 'adminPanel'];
+const workspaceIds = ['dashboardWorkspace', 'labelWorkspace', 'fkPnlWorkspace', 'meeshoPnlWorkspace', 'skuMasterWorkspace', 'marginWorkspace', 'cloudLibraryWorkspace', 'teamWorkspace', 'settingsWorkspace', 'adminPanel'];
 const fallbackAvatar = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" rx="20" fill="#eef2ff"/><circle cx="40" cy="31" r="14" fill="#818cf8"/><path d="M17 71c2-16 11-24 23-24s21 8 23 24" fill="#4f46e5"/></svg>')}`;
 let managerInviteUnsubscribe = null;
 let managerInviteRefreshActive = false;
@@ -217,7 +216,6 @@ function navigateApp(appId, { notify = true } = {}) {
   if (appId === 'labelCutter') el('labelWorkspace').classList.remove('hidden');
   if (appId === 'fkPnlCalculator') el('fkPnlWorkspace').classList.remove('hidden');
   if (appId === 'meeshoPnl') el('meeshoPnlWorkspace').classList.remove('hidden');
-  if (appId === 'settlement') el('settlementWorkspace').classList.remove('hidden');
   if (appId === 'skuMaster') el('skuMasterWorkspace').classList.remove('hidden');
   if (appId === 'marginCalculator') el('marginWorkspace').classList.remove('hidden');
   if (appId === 'cloudLibrary') el('cloudLibraryWorkspace').classList.remove('hidden');
