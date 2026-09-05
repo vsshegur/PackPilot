@@ -665,7 +665,7 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   msProfitItems = Array.from(groupedSku.values());
   allocateMeeshoAdSpend(msProfitItems, msAdSpendTotal);
   msProfitItems.forEach(recalculateMeeshoItem);
-  msProfitItems.sort((a, b) => a.costs.productCost <= 0 && b.costs.productCost > 0 ? -1 : b.profit - a.profit);
+  msProfitItems.sort((a, b) => meeshoUnitCost(a.costs) <= 0 && meeshoUnitCost(b.costs) > 0 ? -1 : b.profit - a.profit);
   renderMeeshoPnl(msProfitItems);
   el('ms_kpiDispatched').textContent = dispatched.toLocaleString('en-IN');
   el('ms_kpiCancelled').textContent = cancelled.toLocaleString('en-IN');
@@ -679,28 +679,39 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   el('ms_pnlResults').classList.remove('hidden');
 });
 
+function meeshoUnitCost(costs) {
+  const savedTotal = number(costs?.totalCost);
+  if (savedTotal > 0) return savedTotal;
+  return Math.max(0, number(costs?.productCost) + number(costs?.packagingCost) + number(costs?.labourCost));
+}
+
 function recalculateMeeshoItem(item) {
-  const costs = item.costs;
-  item.totalCost = (costs.productCost * item.deliveredUnits) + ((costs.packagingCost + costs.labourCost) * item.units);
+  item.totalCost = meeshoUnitCost(item.costs) * item.units;
   item.profit = item.settlement - item.totalCost - number(item.adSpend);
 }
 
-function costInput(item, field, label) {
+function meeshoTotalCostInput(item) {
   const input = document.createElement('input');
   input.type = 'number';
   input.min = '0';
   input.step = '0.01';
-  input.value = number(item.costs[field]) || '';
+  input.value = meeshoUnitCost(item.costs) || '';
   input.placeholder = '0.00';
-  input.className = `cost-input${field === 'productCost' && number(item.costs[field]) <= 0 ? ' is-missing' : ''}`;
-  input.setAttribute('aria-label', `${label} for ${item.master}`);
+  input.className = `cost-input${meeshoUnitCost(item.costs) <= 0 ? ' is-missing' : ''}`;
+  input.setAttribute('aria-label', `Total cost per unit for ${item.master}`);
   input.addEventListener('input', () => {
-    item.costs[field] = Math.max(0, number(input.value));
-    input.classList.toggle('is-missing', field === 'productCost' && item.costs[field] <= 0);
+    const totalCost = Math.max(0, number(input.value));
+    // Store the new all-inclusive value in the existing cost structure so old
+    // SKU Master records and Firestore data remain fully compatible.
+    item.costs.productCost = totalCost;
+    item.costs.packagingCost = 0;
+    item.costs.labourCost = 0;
+    item.costs.totalCost = totalCost;
+    input.classList.toggle('is-missing', totalCost <= 0);
     recalculateMeeshoItem(item);
     item.ui.profit.textContent = money(item.profit);
     item.ui.profit.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
-    item.ui.row.classList.toggle('sku-row--missing', item.costs.productCost <= 0);
+    item.ui.row.classList.toggle('sku-row--missing', totalCost <= 0);
     updateMeeshoTotals();
     clearTimeout(msCostTimers.get(item.master));
     msCostTimers.set(item.master, setTimeout(async () => {
@@ -723,7 +734,7 @@ function renderMeeshoPnl(items) {
   if (!items.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 9;
+    cell.colSpan = 7;
     cell.textContent = 'No completed-payment orders were found in this period. Check the payment report or choose an older month.';
     row.appendChild(cell);
     body.appendChild(row);
@@ -737,9 +748,7 @@ function renderMeeshoPnl(items) {
     const unitsCell = document.createElement('td');
     const settlementCell = document.createElement('td');
     const adsCell = document.createElement('td');
-    const productCell = document.createElement('td');
-    const packagingCell = document.createElement('td');
-    const labourCell = document.createElement('td');
+    const totalCostCell = document.createElement('td');
     const profitCell = document.createElement('td');
     masterCell.textContent = item.master;
     masterCell.className = 'sku-id';
@@ -751,15 +760,13 @@ function renderMeeshoPnl(items) {
     settlementCell.textContent = money(item.settlement);
     adsCell.textContent = money(item.adSpend);
     unitsCell.className = settlementCell.className = adsCell.className = 'number';
-    productCell.appendChild(costInput(item, 'productCost', 'Product cost including GST'));
-    packagingCell.appendChild(costInput(item, 'packagingCost', 'Packaging cost'));
-    labourCell.appendChild(costInput(item, 'labourCost', 'Labour and other cost'));
-    productCell.className = packagingCell.className = labourCell.className = 'number';
+    totalCostCell.appendChild(meeshoTotalCostInput(item));
+    totalCostCell.className = 'number';
     profitCell.textContent = money(item.profit);
     profitCell.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     item.ui = { row, profit: profitCell };
-    row.classList.toggle('sku-row--missing', item.costs.productCost <= 0);
-    row.append(masterCell, childrenCell, unitsCell, settlementCell, adsCell, productCell, packagingCell, labourCell, profitCell);
+    row.classList.toggle('sku-row--missing', meeshoUnitCost(item.costs) <= 0);
+    row.append(masterCell, childrenCell, unitsCell, settlementCell, adsCell, totalCostCell, profitCell);
     body.appendChild(row);
   });
   updateMeeshoTotals();
