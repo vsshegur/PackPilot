@@ -613,6 +613,33 @@ function lc_sortPrintItems(items, platform) {
     return skuCompare !== 0 ? skuCompare : a.originalIndex - b.originalIndex;
   };
 
+  // Meesho packing is courier-first. Keep every courier's labels together,
+  // then apply SKU Master grouping and the saved child-SKU order inside it.
+  if (platform === 'meesho') {
+    return entries.sort((a, b) => {
+      const courierCompare = textCompare(a.item.courier, b.item.courier);
+      if (courierCompare !== 0) return courierCompare;
+
+      if (a.sortInfo.mapped !== b.sortInfo.mapped) {
+        return a.sortInfo.mapped ? -1 : 1;
+      }
+
+      if (a.sortInfo.mapped) {
+        const masterCompare = textCompare(a.sortInfo.masterKey, b.sortInfo.masterKey);
+        if (masterCompare !== 0) return masterCompare;
+
+        const childCompare = Number(a.sortInfo.childIndex) - Number(b.sortInfo.childIndex);
+        if (childCompare !== 0) return childCompare;
+      } else {
+        const skuCompare = textCompare(a.item.sku, b.item.sku);
+        if (skuCompare !== 0) return skuCompare;
+      }
+
+      const quantityCompare = Number(isMulti(a.item)) - Number(isMulti(b.item));
+      return quantityCompare !== 0 ? quantityCompare : a.originalIndex - b.originalIndex;
+    }).map(entry => entry.item);
+  }
+
   const mapped = entries.filter(entry => entry.sortInfo.mapped).sort((a, b) => {
     const masterCompare = textCompare(a.sortInfo.masterKey, b.sortInfo.masterKey);
     if (masterCompare !== 0) return masterCompare;
