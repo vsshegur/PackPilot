@@ -898,7 +898,9 @@ svg {
 .plan-panel,
 .brand-panel,
 .store-panel,
-.recovery-panel {
+.recovery-panel,
+.admin-cloud-panel,
+.admin-public-count {
   padding: clamp(20px, 2.4vw, 30px);
 }
 
