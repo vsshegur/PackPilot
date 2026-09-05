@@ -690,6 +690,8 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
     const isCustomerReturn = !isCancelled && !isRto && Boolean(returnEntry);
     const payment = findReportEntry(msReports.payments, order.ids, orderAliasUse);
     const isCompleted = Boolean(payment?.completed) && !isCancelled;
+    const isFinalForProfit = isCompleted && !isRtoLocked;
+    const consumesProductCost = isFinalForProfit && !isRto && !isCustomerReturn;
     const orderUnits = order.rows.reduce((sum, row) => sum + row.qty, 0) || 1;
     const orderDate = order.rows.map(row => row.date).filter(Boolean).sort((left, right) => left - right)[0] || null;
     const orderStatuses = [...new Set(order.rows.map(row => String(row.status || '').trim()).filter(Boolean))];
@@ -754,15 +756,17 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
         ageDays: orderDate ? Math.max(0, Math.floor((Date.now() - orderDate.getTime()) / 86400000)) : 0
       });
     }
-    if (!isCompleted) return;
+    if (!isFinalForProfit) return;
     completed += 1;
     order.rows.forEach(row => {
       const master = typeof window.resolveMasterSku === 'function' ? window.resolveMasterSku('meesho', row.sku) : row.sku;
       const item = ensureSkuItem(master, row.sku);
       item.childSkus.add(row.sku);
-      item.units += row.qty;
-      if (!isRto && !isCustomerReturn) item.deliveredUnits += row.qty;
       item.settlement += payment.amount * (row.qty / orderUnits);
+      if (consumesProductCost) {
+        item.units += row.qty;
+        item.deliveredUnits += row.qty;
+      }
       groupedSku.set(master, item);
     });
   });
@@ -788,7 +792,7 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
   el('ms_kpiPending').textContent = pending.toLocaleString('en-IN');
   el('ms_kpiMissingSettlements').textContent = msSettlementIssues.length.toLocaleString('en-IN');
   el('ms_periodLabel').textContent = `${from.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} — ${to.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
-  el('ms_completedHeadline').textContent = `${completed.toLocaleString('en-IN')} completed-payment ${completed === 1 ? 'order' : 'orders'} used for profit`;
+  el('ms_completedHeadline').textContent = `${completed.toLocaleString('en-IN')} finalized-settlement ${completed === 1 ? 'order' : 'orders'} used for profit`;
   const paymentFileCount = msReports.payments.fileCount || 1;
   el('ms_pnlStatus').textContent = `${groupedOrders.size.toLocaleString('en-IN')} orders checked · ${completed.toLocaleString('en-IN')} settled · ${rtoComplete.toLocaleString('en-IN')} RTO complete · ${rtoLocked.toLocaleString('en-IN')} RTO locked · ${customerReturn.toLocaleString('en-IN')} customer returns · ${paymentFileCount} payment ${paymentFileCount === 1 ? 'file' : 'files'}`;
   el('ms_pnlResults').classList.remove('hidden');
@@ -827,7 +831,7 @@ function meeshoTotalCostInput(item) {
     recalculateMeeshoItem(item);
     item.ui.profit.textContent = money(item.profit);
     item.ui.profit.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
-    item.ui.unitProfit.textContent = money(item.units ? item.profit / item.units : 0);
+    item.ui.unitProfit.textContent = item.units ? money(item.profit / item.units) : '—';
     item.ui.unitProfit.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     item.ui.row.classList.toggle('sku-row--missing', item.units > 0 && totalCost <= 0);
     updateMeeshoTotals();
@@ -892,7 +896,7 @@ function renderMeeshoPnl(items) {
     totalOrdersCell.className = cancelledCell.className = rtoCell.className = returnsCell.className = returnRateCell.className = unitsCell.className = settlementCell.className = adsCell.className = 'number';
     totalCostCell.appendChild(meeshoTotalCostInput(item));
     totalCostCell.className = 'number';
-    unitProfitCell.textContent = money(item.units ? item.profit / item.units : 0);
+    unitProfitCell.textContent = item.units ? money(item.profit / item.units) : '—';
     unitProfitCell.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     profitCell.textContent = money(item.profit);
     profitCell.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
