@@ -73,7 +73,14 @@ const QTY_TESTS = [h => h === 'qty', h => h.includes('quantity'), h => h.include
 const AMOUNT_TESTS = [h => h.includes('settlement amount'), h => h.includes('net settlement'), h => h.includes('amount settled'), h => h.includes('bank settlement'), h => h.includes('payable amount'), h => h === 'settlement'];
 const ORDER_TESTS = [h => h === 'order id', h => h.includes('sub order id'), h => h.includes('suborder id'), h => h.includes('sub order no'), h => h.includes('suborder no'), h => h === 'order no', h => h.includes('order number')];
 const DATE_TESTS = [h => h.includes('dispatch date'), h => h.includes('dispatch time'), h => h.includes('order date'), h => h.includes('ordered date'), h => h === 'date'];
+const CREDIT_REASON_TESTS = [
+  h => h === 'reason for credit entry',
+  h => h.includes('reason for credit entry'),
+  h => h.includes('credit entry reason'),
+  h => h.includes('credit reason')
+];
 const STATUS_TESTS = [
+  ...CREDIT_REASON_TESTS,
   h => h.includes('status'),
   h => h.includes('cancel'),
   h => h === 'status',
@@ -286,6 +293,7 @@ async function parseMeeshoOrders(file) {
   const dateIndex = findColumn(match.headers, DATE_TESTS);
   const quantityIndex = findColumn(match.headers, QTY_TESTS);
   const statusIndexes = findColumns(match.headers, STATUS_TESTS);
+  const creditReasonIndexes = findColumns(match.headers, CREDIT_REASON_TESTS);
   const rows = match.rows.slice(match.index + 1).map(row => {
     const ids = rowOrderIds(row, idIndexes);
     return {
@@ -294,7 +302,8 @@ async function parseMeeshoOrders(file) {
       sku: String(row[skuIndex] ?? '').trim(),
       date: parseDateValue(row[dateIndex]),
       qty: Math.max(1, Math.abs(number(quantityIndex >= 0 ? row[quantityIndex] : 1)) || 1),
-      status: rowText(row, statusIndexes)
+      status: rowText(row, statusIndexes),
+      creditReason: rowText(row, creditReasonIndexes)
     };
   }).filter(row => row.id && row.sku && row.date);
   if (!rows.length) throw new Error('No dated order rows were found in the selected orders report.');
@@ -612,10 +621,11 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
   if (!rows.length) return alert('No order rows were found inside the selected date range.');
   const groupedOrders = new Map();
   rows.forEach(row => {
-    const order = groupedOrders.get(row.id) || { id: row.id, ids: new Set(), rows: [], status: '' };
+    const order = groupedOrders.get(row.id) || { id: row.id, ids: new Set(), rows: [], status: '', creditReason: '' };
     row.ids.forEach(id => order.ids.add(id));
     order.rows.push(row);
     order.status += ` ${row.status}`;
+    order.creditReason += ` ${row.creditReason}`;
     groupedOrders.set(row.id, order);
   });
   const orderAliasUse = new Map();
@@ -636,19 +646,27 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
 
   let dispatched = 0;
   let cancelled = 0;
-  let rto = 0;
+  let rtoComplete = 0;
+  let rtoLocked = 0;
   let customerReturn = 0;
   let pending = 0;
   let completed = 0;
   const groupedSku = new Map();
   const settlementIssues = [];
+  const rtoLockedOrders = [];
 
   groupedOrders.forEach(order => {
-    const status = order.status.toLowerCase();
+    // Meesho commonly writes RTO_COMPLETE and RTO_LOCKED in "Reason for
+    // Credit Entry". Normalize underscores and punctuation before matching.
+    const status = normalize(`${order.status} ${order.creditReason}`);
     const returnEntry = findReportEntry(msReports.returns, order.ids, orderAliasUse);
-    const returnText = String(returnEntry?.statusText || '').toLowerCase();
-    const isCancelled = /\bcancell?ed\b|\bcancellation\b|\bcancelled by\b/.test(status);
-    const isRto = !isCancelled && /\brto\b|return(?:ed)? to origin|courier return|undeliverable/.test(`${status} ${returnText}`);
+    const returnText = normalize(returnEntry?.statusText || '');
+    const combinedStatus = normalize(`${status} ${returnText}`);
+    const isCancelled = /\bcancel(?:led|ed)?\b|\bcancellation\b/.test(status);
+    const isRtoLocked = !isCancelled && /\brto locked\b/.test(status);
+    const isRtoComplete = !isCancelled && !isRtoLocked
+      && /\brto complete(?:d)?\b|\brto\b|return(?:ed)? to origin|courier return|undeliverable/.test(combinedStatus);
+    const isRto = isRtoLocked || isRtoComplete;
     const isCustomerReturn = !isCancelled && !isRto && Boolean(returnEntry);
     const payment = findReportEntry(msReports.payments, order.ids, orderAliasUse);
     const isCompleted = Boolean(payment?.completed) && !isCancelled;
@@ -660,7 +678,21 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
     const isZeroSettlement = isCompleted && number(payment?.amount) <= 0;
     if (!isCancelled) dispatched += 1;
     if (isCancelled) cancelled += 1;
-    if (isRto) rto += 1;
+    if (isRtoComplete) rtoComplete += 1;
+    if (isRtoLocked) {
+      rtoLocked += 1;
+      const masterSkus = [...new Set(order.rows.map(row => (
+        typeof window.resolveMasterSku === 'function' ? window.resolveMasterSku('meesho', row.sku) : row.sku
+      )).filter(Boolean))];
+      const creditReasons = [...new Set(order.rows.map(row => String(row.creditReason || '').trim()).filter(Boolean))];
+      rtoLockedOrders.push({
+        orderId: order.id,
+        orderDate,
+        masterSkus,
+        units: orderUnits,
+        reason: creditReasons.join(' · ') || 'RTO_LOCKED'
+      });
+    }
     if (isCustomerReturn) customerReturn += 1;
     if (!isCancelled && !isRto && !isCustomerReturn && !isCompleted) pending += 1;
     if (!isCancelled && !isRto && !isCustomerReturn && (!isCompleted || isZeroSettlement)) {
@@ -701,17 +733,19 @@ el('ms_runPnlBtn').addEventListener('click', async () => {
   msProfitItems.sort((a, b) => meeshoUnitCost(a.costs) <= 0 && meeshoUnitCost(b.costs) > 0 ? -1 : b.profit - a.profit);
   msSettlementIssues = settlementIssues.sort((a, b) => b.ageDays - a.ageDays || String(a.orderId).localeCompare(String(b.orderId)));
   renderMeeshoPnl(msProfitItems);
+  renderMeeshoRtoLocked(rtoLockedOrders);
   renderMeeshoSettlementIssues(msSettlementIssues);
   el('ms_kpiDispatched').textContent = dispatched.toLocaleString('en-IN');
   el('ms_kpiCancelled').textContent = cancelled.toLocaleString('en-IN');
-  el('ms_kpiRto').textContent = rto.toLocaleString('en-IN');
+  el('ms_kpiRtoComplete').textContent = rtoComplete.toLocaleString('en-IN');
+  el('ms_kpiRtoLocked').textContent = rtoLocked.toLocaleString('en-IN');
   el('ms_kpiReturns').textContent = customerReturn.toLocaleString('en-IN');
   el('ms_kpiPending').textContent = pending.toLocaleString('en-IN');
   el('ms_kpiMissingSettlements').textContent = msSettlementIssues.length.toLocaleString('en-IN');
   el('ms_periodLabel').textContent = `${from.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} — ${to.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
   el('ms_completedHeadline').textContent = `${completed.toLocaleString('en-IN')} completed-payment ${completed === 1 ? 'order' : 'orders'} used for profit`;
   const paymentFileCount = msReports.payments.fileCount || 1;
-  el('ms_pnlStatus').textContent = `${groupedOrders.size.toLocaleString('en-IN')} orders checked · ${completed.toLocaleString('en-IN')} settled · ${(rto + customerReturn).toLocaleString('en-IN')} return/RTO matches · ${paymentFileCount} payment ${paymentFileCount === 1 ? 'file' : 'files'}`;
+  el('ms_pnlStatus').textContent = `${groupedOrders.size.toLocaleString('en-IN')} orders checked · ${completed.toLocaleString('en-IN')} settled · ${rtoComplete.toLocaleString('en-IN')} RTO complete · ${rtoLocked.toLocaleString('en-IN')} RTO locked · ${customerReturn.toLocaleString('en-IN')} customer returns · ${paymentFileCount} payment ${paymentFileCount === 1 ? 'file' : 'files'}`;
   el('ms_pnlResults').classList.remove('hidden');
 });
 
@@ -847,6 +881,40 @@ function renderMeeshoSettlementIssues(issues) {
     });
     body.appendChild(row);
   });
+}
+
+function renderMeeshoRtoLocked(items) {
+  const body = el('ms_rtoLockedBody');
+  body.replaceChildren();
+  if (!items.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 5;
+    cell.textContent = 'No RTO_LOCKED orders were found in the selected order period.';
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+
+  items
+    .sort((left, right) => (right.orderDate?.getTime() || 0) - (left.orderDate?.getTime() || 0) || String(left.orderId).localeCompare(String(right.orderId)))
+    .forEach(item => {
+      const row = document.createElement('tr');
+      const values = [
+        item.orderId,
+        item.orderDate ? item.orderDate.toLocaleDateString('en-IN') : '—',
+        item.masterSkus.join(' + ') || '—',
+        number(item.units).toLocaleString('en-IN', { maximumFractionDigits: 2 }),
+        item.reason
+      ];
+      values.forEach((value, index) => {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        if (index === 3) cell.className = 'number';
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
 }
 
 function meeshoCsvCell(value) {
