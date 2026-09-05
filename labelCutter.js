@@ -463,7 +463,7 @@ document.getElementById('lc_processBtn').addEventListener('click', async () => {
       if (typeof window.recordLabelBatch === 'function') {
           window.recordLabelBatch({
               platform: currentPlatform,
-              format: formatSelection,
+              format: document.getElementById('lc_printFormat').value,
               totalOrders: lc_parsedData.length,
               totalPieces: lc_parsedData.reduce((sum, item) => sum + item.qty, 0)
           }).catch(error => console.warn('Label activity could not be counted.', error));
