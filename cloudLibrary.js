@@ -130,7 +130,7 @@ function renderRecentProcessedPdfs() {
 
 async function loadCloudPdfs() {
   const uid = sellerUid();
-  if (!uid || !window.appState?.currentUser) return;
+  if (!uid || !window.appState?.currentUser || !['seller', 'operations_manager'].includes(window.appState?.role)) return;
   const manager = window.appState?.role === 'operations_manager';
   el('cloud_empty').textContent = manager
     ? 'Your Seller has not shared any active PDFs. Only explicitly shared files appear here.'
@@ -274,6 +274,7 @@ el('lc_cloudSaveBtn').addEventListener('click', async () => {
 el('cloud_refreshBtn').addEventListener('click', loadCloudPdfs);
 el('cloud_refreshLocalBtn').addEventListener('click', loadRecentProcessedPdfs);
 window.addEventListener('appUnlocked', () => {
+  if (!['seller', 'operations_manager'].includes(window.appState?.role)) return;
   loadCloudPdfs();
   loadRecentProcessedPdfs();
   clearInterval(countdownTimer);
