@@ -58,10 +58,16 @@ function isOperationsManager() {
   return window.appState.role === 'operations_manager';
 }
 
+function isPlatformAdmin() {
+  return window.appState.role === 'platform_super_admin';
+}
+
 function applyRoleUi() {
   const manager = isOperationsManager();
+  const admin = isPlatformAdmin();
   document.body.classList.toggle('operation-manager-mode', manager);
-  document.querySelectorAll('.seller-only').forEach(node => node.classList.toggle('role-hidden', manager));
+  document.body.classList.toggle('platform-admin-mode', admin);
+  document.querySelectorAll('.seller-only').forEach(node => node.classList.toggle('role-hidden', manager || admin));
   document.querySelectorAll('.seller-cloud-only').forEach(node => node.classList.toggle('role-hidden', window.appState.role !== 'seller'));
   document.querySelectorAll('.manager-only').forEach(node => node.classList.toggle('role-hidden', !manager));
   const description = el('cloudRoleDescription');
@@ -139,9 +145,9 @@ el('themeToggle').addEventListener('click', () => {
 });
 
 function setAppChrome(visible) {
-  const manager = visible && isOperationsManager();
-  el('appSidebar').classList.toggle('hidden', !visible || manager);
-  el('mobileMenuBtn').classList.toggle('hidden', !visible || manager);
+  const focusedRole = visible && (isOperationsManager() || isPlatformAdmin());
+  el('appSidebar').classList.toggle('hidden', !visible || focusedRole);
+  el('mobileMenuBtn').classList.toggle('hidden', !visible || focusedRole);
   el('pageIdentity').classList.toggle('hidden', !visible);
   if (!visible) closeMobileMenu();
 }
@@ -197,6 +203,10 @@ function updateNavigation(appId) {
 
 function navigateApp(appId, { notify = true } = {}) {
   if (!window.appState.isUnlocked || !APP_META[appId]) return;
+  if (isPlatformAdmin()) {
+    showAdminWorkspace({ notify });
+    return;
+  }
   if (isOperationsManager() && appId !== 'cloudLibrary') appId = 'cloudLibrary';
   if (appId === 'dashboard' && window.appState.role !== 'seller') appId = 'labelCutter';
   window.appState.currentApp = appId;
@@ -222,6 +232,19 @@ function navigateApp(appId, { notify = true } = {}) {
   if (notify) window.dispatchEvent(new CustomEvent('workspaceChanged', { detail: { app: appId } }));
 }
 
+function showAdminWorkspace({ notify = true } = {}) {
+  if (!window.appState.isUnlocked || !isPlatformAdmin()) return;
+  window.appState.currentApp = 'admin';
+  closeMobileMenu();
+  workspaceIds.forEach(id => el(id).classList.add('hidden'));
+  el('adminPanel').classList.remove('hidden');
+  el('adminToggleBtn').classList.add('hidden');
+  el('pageEyebrow').textContent = 'Platform administration';
+  el('pageTitle').textContent = 'Admin Panel';
+  Promise.all([loadAdminUsers(), loadCloudStorageConfig()]).catch(error => console.error('Admin panel could not be refreshed.', error));
+  if (notify) window.dispatchEvent(new CustomEvent('workspaceChanged', { detail: { app: 'admin' } }));
+}
+
 document.querySelectorAll('[data-app]').forEach(button => {
   button.addEventListener('click', () => navigateApp(button.dataset.app));
 });
@@ -245,7 +268,7 @@ function resetSignedOutView() {
   window.appState.ownerEmail = null;
   window.appState.workspaceUid = null;
   window.appState.skuMaster = {};
-  document.body.classList.remove('operation-manager-mode', 'invitation-open');
+  document.body.classList.remove('operation-manager-mode', 'platform-admin-mode', 'invitation-open');
   el('managerInviteDialog').classList.add('hidden');
   workspaceIds.forEach(id => el(id).classList.add('hidden'));
   el('authPanel').classList.remove('hidden');
@@ -263,8 +286,8 @@ function showUnlockedView() {
   el('userInfo').classList.remove('hidden');
   setAppChrome(true);
   applyRoleUi();
-  const defaultApp = isOperationsManager() ? 'cloudLibrary' : (window.appState.role === 'seller' ? 'dashboard' : 'labelCutter');
-  navigateApp(defaultApp, { notify: false });
+  if (isPlatformAdmin()) showAdminWorkspace({ notify: false });
+  else navigateApp(isOperationsManager() ? 'cloudLibrary' : 'dashboard', { notify: false });
   window.dispatchEvent(new Event('appUnlocked'));
 }
 
@@ -398,7 +421,7 @@ async function handleSignedInUser(user) {
     else await updateDoc(userRef, legacyProfile);
   }
 
-  if (userData.role !== 'operations_manager') await loadUserMemory(user);
+  if (userData.role === 'seller') await loadUserMemory(user);
   window.appState.currentUser = user;
   window.appState.role = userData.role;
   window.appState.ownerUid = userData.ownerUid || user.uid;
@@ -436,7 +459,7 @@ async function handleSignedInUser(user) {
   };
   el('userPlan').textContent = `${window.appState.userPlan.planType} · ${window.appState.userPlan.daysLeft}`;
 
-  if (isAdmin) el('adminToggleBtn').classList.remove('hidden');
+  el('adminToggleBtn').classList.add('hidden');
 
   if (isExpired) {
     el('expiredWarning').classList.remove('hidden');
@@ -672,6 +695,10 @@ async function removeStore(index) {
 }
 
 el('adminToggleBtn').addEventListener('click', async () => {
+  if (isPlatformAdmin()) {
+    showAdminWorkspace();
+    return;
+  }
   const adminPanel = el('adminPanel');
   if (adminPanel.classList.contains('hidden')) {
     workspaceIds.forEach(id => el(id).classList.add('hidden'));
