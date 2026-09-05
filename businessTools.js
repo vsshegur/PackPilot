@@ -588,7 +588,14 @@ function skuCosts(sku) {
   return { masterSku: sku, childSkus: [sku], productCost, packagingCost: 0, labourCost: 0, totalCost: productCost };
 }
 
-el('ms_runPnlBtn').addEventListener('click', () => {
+el('ms_runPnlBtn').addEventListener('click', async () => {
+  if (window.skuMasterReady) {
+    try {
+      await window.skuMasterReady;
+    } catch (error) {
+      console.warn('Saved Meesho SKU costs could not be loaded before calculation.', error);
+    }
+  }
   const from = parseDateValue(el('ms_fromDate').value);
   const to = parseDateValue(el('ms_toDate').value);
   if (!from || !to || from > to) return alert('Choose a valid From date and To date.');
