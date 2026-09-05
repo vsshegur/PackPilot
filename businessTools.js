@@ -104,6 +104,8 @@ const RETURN_TYPE_TESTS = [
 const msReports = { orders: null, payments: null, returns: null };
 const msPaymentFiles = new Map();
 let msProfitItems = [];
+let msAdSpendManual = false;
+let msAdSpendTotal = 0;
 const msCostTimers = new Map();
 
 function orderId(value) {
@@ -125,7 +127,7 @@ function rowText(row, indexes) {
   return indexes.map(index => String(row[index] ?? '').trim()).filter(Boolean).join(' ');
 }
 
-function mergePaymentRecords(records, fileCount) {
+function mergePaymentRecords(records, fileCount, adRows = []) {
   const entriesByPrimary = new Map();
   records.forEach(record => {
     const primaryId = record.ids[0];
@@ -155,11 +157,14 @@ function mergePaymentRecords(records, fileCount) {
     if (matches.size === 1) lookup.set(alias, [...matches][0]);
   });
 
+  const uniqueAdRows = new Map();
+  adRows.forEach(row => uniqueAdRows.set(row.fingerprint, row));
   return {
     lookup,
     orderCount: entries.length,
     transactionCount: entries.reduce((sum, entry) => sum + entry.transactions.size, 0),
-    fileCount
+    fileCount,
+    adRows: [...uniqueAdRows.values()]
   };
 }
 
@@ -171,6 +176,39 @@ function findReportEntry(report, ids, orderAliasUse = null) {
     if (entry) return entry;
   }
   return null;
+}
+
+function detectedAdSpend(report, from, to, groupedOrders) {
+  const selectedIds = new Set();
+  groupedOrders.forEach(order => order.ids.forEach(id => selectedIds.add(id)));
+  let amount = 0;
+  let matchedRows = 0;
+  let unresolvedRows = 0;
+
+  (report?.adRows || []).forEach(row => {
+    const matchesOrder = row.ids.some(id => selectedIds.has(id));
+    const matchesDate = row.date && row.date >= from && row.date <= to;
+    const rangeInsidePeriod = row.sourceFrom && row.sourceTo && row.sourceFrom >= from && row.sourceTo <= to;
+    if (matchesOrder || matchesDate || rangeInsidePeriod) {
+      amount += row.amount;
+      matchedRows += 1;
+    } else if (!row.ids.length && !row.date && !(row.sourceFrom && row.sourceTo)) {
+      unresolvedRows += 1;
+    }
+  });
+  return { amount, matchedRows, unresolvedRows };
+}
+
+function allocateMeeshoAdSpend(items, adSpend) {
+  const totalUnits = items.reduce((sum, item) => sum + item.units, 0);
+  let allocated = 0;
+  items.forEach((item, index) => {
+    const share = totalUnits > 0
+      ? (index === items.length - 1 ? adSpend - allocated : adSpend * (item.units / totalUnits))
+      : 0;
+    item.adSpend = Math.max(0, share);
+    allocated += item.adSpend;
+  });
 }
 
 function setMeeshoPeriodFromOrders(rows) {
@@ -262,8 +300,96 @@ async function parseMeeshoOrders(file) {
   return rows;
 }
 
+function fileDateRange(fileName) {
+  const matches = [...String(fileName || '').matchAll(/(20\d{2})[-_](\d{1,2})[-_](\d{1,2})/g)]
+    .map(match => new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+    .filter(date => !Number.isNaN(date.getTime()));
+  if (!matches.length) return { from: null, to: null };
+  return { from: matches[0], to: matches[matches.length - 1] };
+}
+
+function parseMeeshoAdSpend(workbook, fileName) {
+  const sourceRange = fileDateRange(fileName);
+  const results = [];
+  const strongAmountTests = [
+    h => /\bads?\b/.test(h) && /(spend|spent|cost|charge|amount|deduct)/.test(h),
+    h => h.includes('advertising') && /(spend|spent|cost|charge|amount|deduct)/.test(h),
+    h => h.includes('campaign spend'),
+    h => h.includes('total spend'),
+    h => h.includes('amount spent')
+  ];
+
+  workbook.SheetNames.forEach(sheetName => {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: true });
+    const adSheet = /\b(ad|ads|advertisement|advertising|campaign)\b/.test(normalize(sheetName));
+    let header = null;
+    for (let index = 0; index < Math.min(rows.length, 60); index += 1) {
+      const headers = (rows[index] || []).map(normalize);
+      let amountIndex = findColumn(headers, strongAmountTests);
+      if (amountIndex < 0 && adSheet) {
+        amountIndex = headers.findIndex(value => value !== 'budget' && /(spend|spent|cost|charge|deduct|amount)/.test(value));
+      }
+      if (amountIndex >= 0) {
+        header = { index, headers, amountIndex };
+        break;
+      }
+    }
+    if (!header) return;
+
+    const idIndexes = orderIdColumns(header.headers);
+    const dateIndexes = findColumns(header.headers, [
+      h => h === 'date',
+      h => h.includes('spend date'),
+      h => h.includes('transaction date'),
+      h => h.includes('deduction date'),
+      h => h.includes('campaign date'),
+      h => h.includes('activity date')
+    ]);
+    const referenceIndexes = findColumns(header.headers, [
+      h => h.includes('campaign id'),
+      h => h.includes('transaction id'),
+      h => h.includes('reference id'),
+      h => h.includes('ad id')
+    ]);
+    const detailIndexes = findColumns(header.headers, [
+      h => h.includes('campaign name'),
+      h => h.includes('catalog'),
+      h => h.includes('description'),
+      h => h.includes('particular'),
+      h => h.includes('type')
+    ]);
+    const sheetRows = [];
+    rows.slice(header.index + 1).forEach(row => {
+      const amount = Math.abs(number(row[header.amountIndex]));
+      if (!amount) return;
+      const ids = rowOrderIds(row, idIndexes);
+      const date = dateIndexes.map(index => parseDateValue(row[index])).find(Boolean) || null;
+      const reference = rowText(row, referenceIndexes);
+      const detail = rowText(row, detailIndexes);
+      const rowLabel = normalize(row.map(value => String(value ?? '')).join(' '));
+      const isTotal = /^(grand )?total\b|\btotal (ad|ads|spend|amount|cost)\b/.test(rowLabel);
+      const rangeKey = [sourceRange.from, sourceRange.to].map(value => value ? inputDate(value) : '').join(':');
+      sheetRows.push({
+        ids,
+        date,
+        sourceFrom: sourceRange.from,
+        sourceTo: sourceRange.to,
+        amount,
+        isTotal,
+        fingerprint: [normalize(sheetName), ids.slice().sort().join('|'), normalize(reference), amount.toFixed(2), date ? inputDate(date) : '', normalize(detail), rangeKey].join('|')
+      });
+    });
+
+    const detailRows = sheetRows.filter(row => !row.isTotal);
+    if (detailRows.length) results.push(...detailRows);
+    else if (sheetRows.length) results.push(sheetRows[sheetRows.length - 1]);
+  });
+  return results;
+}
+
 async function parseMeeshoPayments(file) {
-  const match = findRows(await readWorkbook(file), [ORDER_TESTS, AMOUNT_TESTS]);
+  const workbook = await readWorkbook(file);
+  const match = findRows(workbook, [ORDER_TESTS, AMOUNT_TESTS]);
   if (!match) throw new Error('Payment report needs Order ID and final settlement amount columns.');
   const idIndexes = orderIdColumns(match.headers);
   const amountIndex = findColumn(match.headers, AMOUNT_TESTS);
@@ -311,7 +437,7 @@ async function parseMeeshoPayments(file) {
     });
   });
   if (!records.length) throw new Error('No payment rows were found in the selected report.');
-  return records;
+  return { records, adRows: parseMeeshoAdSpend(workbook, file.name) };
 }
 
 async function parseMeeshoReturns(file) {
@@ -354,6 +480,7 @@ async function chooseMeeshoReport(kind, file) {
     if (kind === 'orders') {
       msReports.orders = await parseMeeshoOrders(file);
       setMeeshoPeriodFromOrders(msReports.orders);
+      if (!msAdSpendManual) el('ms_adSpend').value = '';
     }
     if (kind === 'returns') msReports.returns = await parseMeeshoReturns(file);
     const count = kind === 'orders' ? msReports.orders.length : msReports[kind].orderCount;
@@ -379,7 +506,7 @@ async function addMeeshoPaymentReports(files) {
   const results = await Promise.allSettled(freshFiles.map(async file => ({
     key: `${file.name}|${file.size}|${file.lastModified}`,
     file,
-    records: await parseMeeshoPayments(file)
+    parsed: await parseMeeshoPayments(file)
   })));
   const errors = [];
   results.forEach(result => {
@@ -387,15 +514,23 @@ async function addMeeshoPaymentReports(files) {
     else errors.push(result.reason?.message || 'A payment report could not be read.');
   });
 
-  const allRecords = [...msPaymentFiles.values()].flatMap(item => item.records);
-  msReports.payments = allRecords.length ? mergePaymentRecords(allRecords, msPaymentFiles.size) : null;
+  const allRecords = [...msPaymentFiles.values()].flatMap(item => item.parsed.records);
+  const allAdRows = [...msPaymentFiles.values()].flatMap(item => item.parsed.adRows);
+  msReports.payments = allRecords.length ? mergePaymentRecords(allRecords, msPaymentFiles.size, allAdRows) : null;
   if (msReports.payments) {
     const report = msReports.payments;
-    status.textContent = `${report.fileCount} payment ${report.fileCount === 1 ? 'file' : 'files'} · ${report.orderCount.toLocaleString('en-IN')} order IDs · ${report.transactionCount.toLocaleString('en-IN')} unique rows`;
+    const adStatus = report.adRows.length ? ` · ${report.adRows.length.toLocaleString('en-IN')} ads rows found` : '';
+    status.textContent = `${report.fileCount} payment ${report.fileCount === 1 ? 'file' : 'files'} · ${report.orderCount.toLocaleString('en-IN')} order IDs · ${report.transactionCount.toLocaleString('en-IN')} unique rows${adStatus}`;
     status.title = [...msPaymentFiles.values()].map(item => item.file.name).join('\n');
     el('ms_clearPaymentsBtn').classList.remove('hidden');
   }
   if (errors.length) alert([...new Set(errors)].join('\n'));
+  if (!msAdSpendManual) {
+    el('ms_adSpend').value = '';
+    el('ms_adsHint').textContent = msReports.payments?.adRows.length
+      ? 'Ads rows found. The selected period total will be detected when you calculate.'
+      : 'No ads rows detected in these payment files; enter the period total manually if needed.';
+  }
   el('ms_pnlResults').classList.add('hidden');
   updateMeeshoRunState();
 }
@@ -420,14 +555,30 @@ el('ms_clearPaymentsBtn').addEventListener('click', () => {
   el('ms_paymentsStatus').textContent = 'Add every settlement file issued for the selected order month, including later months.';
   el('ms_paymentsStatus').removeAttribute('title');
   el('ms_clearPaymentsBtn').classList.add('hidden');
+  if (!msAdSpendManual) el('ms_adSpend').value = '';
+  el('ms_adsHint').textContent = msAdSpendManual
+    ? 'Manual ads amount will be deducted from profit.'
+    : 'Automatic detection will be used after payment files are added.';
   el('ms_pnlResults').classList.add('hidden');
   updateMeeshoRunState();
 });
 
 ['ms_fromDate', 'ms_toDate'].forEach(id => el(id).addEventListener('change', () => {
+  if (!msAdSpendManual) {
+    el('ms_adSpend').value = '';
+    el('ms_adsHint').textContent = 'Automatic ads spend will be recalculated for the new period.';
+  }
   el('ms_pnlResults').classList.add('hidden');
   updateMeeshoRunState();
 }));
+
+el('ms_adSpend').addEventListener('input', event => {
+  msAdSpendManual = String(event.target.value || '').trim() !== '';
+  el('ms_adsHint').textContent = msAdSpendManual
+    ? 'Manual ads amount will be deducted from profit.'
+    : 'Automatic detection will be used when you calculate.';
+  el('ms_pnlResults').classList.add('hidden');
+});
 
 function skuCosts(sku) {
   if (typeof window.getSkuCostBreakdown === 'function') return window.getSkuCostBreakdown('meesho', sku);
@@ -461,6 +612,19 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   });
   const orderAliasUse = new Map();
   groupedOrders.forEach(order => order.ids.forEach(id => orderAliasUse.set(id, (orderAliasUse.get(id) || 0) + 1)));
+  const automaticAds = detectedAdSpend(msReports.payments, from, to, groupedOrders);
+  const adsInput = el('ms_adSpend');
+  const adsSpend = msAdSpendManual ? Math.max(0, number(adsInput.value)) : automaticAds.amount;
+  msAdSpendTotal = adsSpend;
+  if (!msAdSpendManual) adsInput.value = adsSpend ? adsSpend.toFixed(2) : '';
+  if (msAdSpendManual) {
+    el('ms_adsHint').textContent = `${money(adsSpend)} manual ads spend will be deducted.`;
+  } else if (automaticAds.matchedRows) {
+    const unresolved = automaticAds.unresolvedRows ? ` ${automaticAds.unresolvedRows} undated rows need manual review.` : '';
+    el('ms_adsHint').textContent = `${money(adsSpend)} detected from ${automaticAds.matchedRows} ads ${automaticAds.matchedRows === 1 ? 'row' : 'rows'} for this period.${unresolved}`;
+  } else {
+    el('ms_adsHint').textContent = 'No ads spend could be assigned automatically. Enter the period total manually if you used Meesho Ads.';
+  }
 
   let dispatched = 0;
   let cancelled = 0;
@@ -499,6 +663,7 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   });
 
   msProfitItems = Array.from(groupedSku.values());
+  allocateMeeshoAdSpend(msProfitItems, msAdSpendTotal);
   msProfitItems.forEach(recalculateMeeshoItem);
   msProfitItems.sort((a, b) => a.costs.productCost <= 0 && b.costs.productCost > 0 ? -1 : b.profit - a.profit);
   renderMeeshoPnl(msProfitItems);
@@ -517,7 +682,7 @@ el('ms_runPnlBtn').addEventListener('click', () => {
 function recalculateMeeshoItem(item) {
   const costs = item.costs;
   item.totalCost = (costs.productCost * item.deliveredUnits) + ((costs.packagingCost + costs.labourCost) * item.units);
-  item.profit = item.settlement - item.totalCost;
+  item.profit = item.settlement - item.totalCost - number(item.adSpend);
 }
 
 function costInput(item, field, label) {
@@ -558,7 +723,7 @@ function renderMeeshoPnl(items) {
   if (!items.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 8;
+    cell.colSpan = 9;
     cell.textContent = 'No completed-payment orders were found in this period. Check the payment report or choose an older month.';
     row.appendChild(cell);
     body.appendChild(row);
@@ -571,6 +736,7 @@ function renderMeeshoPnl(items) {
     const childrenCell = document.createElement('td');
     const unitsCell = document.createElement('td');
     const settlementCell = document.createElement('td');
+    const adsCell = document.createElement('td');
     const productCell = document.createElement('td');
     const packagingCell = document.createElement('td');
     const labourCell = document.createElement('td');
@@ -583,7 +749,8 @@ function renderMeeshoPnl(items) {
     childrenCell.appendChild(children);
     unitsCell.textContent = number(item.units).toLocaleString('en-IN', { maximumFractionDigits: 2 });
     settlementCell.textContent = money(item.settlement);
-    unitsCell.className = settlementCell.className = 'number';
+    adsCell.textContent = money(item.adSpend);
+    unitsCell.className = settlementCell.className = adsCell.className = 'number';
     productCell.appendChild(costInput(item, 'productCost', 'Product cost including GST'));
     packagingCell.appendChild(costInput(item, 'packagingCost', 'Packaging cost'));
     labourCell.appendChild(costInput(item, 'labourCost', 'Labour and other cost'));
@@ -592,7 +759,7 @@ function renderMeeshoPnl(items) {
     profitCell.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     item.ui = { row, profit: profitCell };
     row.classList.toggle('sku-row--missing', item.costs.productCost <= 0);
-    row.append(masterCell, childrenCell, unitsCell, settlementCell, productCell, packagingCell, labourCell, profitCell);
+    row.append(masterCell, childrenCell, unitsCell, settlementCell, adsCell, productCell, packagingCell, labourCell, profitCell);
     body.appendChild(row);
   });
   updateMeeshoTotals();
@@ -603,13 +770,17 @@ function updateMeeshoTotals() {
     units: sum.units + item.units,
     settlement: sum.settlement + item.settlement,
     cost: sum.cost + item.totalCost,
+    ads: sum.ads + number(item.adSpend),
     profit: sum.profit + item.profit
-  }), { units: 0, settlement: 0, cost: 0, profit: 0 });
+  }), { units: 0, settlement: 0, cost: 0, ads: 0, profit: 0 });
+  const unallocatedAds = Math.max(0, msAdSpendTotal - totals.ads);
   el('ms_kpiUnits').textContent = number(totals.units).toLocaleString('en-IN', { maximumFractionDigits: 2 });
   el('ms_kpiSettlement').textContent = money(totals.settlement);
   el('ms_kpiCost').textContent = money(totals.cost);
-  el('ms_kpiProfit').textContent = money(totals.profit);
-  el('ms_kpiProfit').className = totals.profit >= 0 ? 'positive' : 'negative';
+  el('ms_kpiAds').textContent = money(msAdSpendTotal);
+  const netProfit = totals.profit - unallocatedAds;
+  el('ms_kpiProfit').textContent = money(netProfit);
+  el('ms_kpiProfit').className = netProfit >= 0 ? 'positive' : 'negative';
 }
 
 setDefaultMeeshoPeriod();
