@@ -1819,6 +1819,18 @@ textarea:focus {
   overflow: auto;
 }
 
+.table-scroll-top {
+  height: 18px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+  scrollbar-color: var(--brand) var(--surface-strong);
+  scrollbar-width: auto;
+}
+
+.table-scroll-top > div { height: 1px; }
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -3715,7 +3727,7 @@ body.platform-admin-mode #adminPanel { max-width: 1100px; margin-inline: auto; }
 .ms-finance-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .kpi-card--ads { border-color: rgba(244, 51, 151, .24) !important; background: linear-gradient(140deg, rgba(244, 51, 151, .08), var(--surface)) !important; }
 .kpi-card--ads > strong { color: #d61f7d !important; }
-.ms-profit-table { min-width: 1160px; }
+.ms-profit-table { min-width: 1740px; }
 .ms-rto-locked-table { min-width: 760px; }
 .ms-missing-table { min-width: 1100px; }
 
