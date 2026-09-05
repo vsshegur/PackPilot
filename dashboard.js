@@ -1,7 +1,6 @@
 import { db } from './firebase-config.js';
 import {
   collection,
-  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -173,7 +172,11 @@ async function rebuildPublicLabelCount({ onlyIfEmpty = false } = {}) {
   }
 
   if (status) status.textContent = 'Adding all sellers’ saved label batches…';
-  const snapshot = await getDocs(collectionGroup(db, 'labelBatches'));
+  const usersSnapshot = await getDocs(collection(db, 'users'));
+  const sellerUsers = usersSnapshot.docs.filter(item => ['seller', 'seller_owner'].includes(item.data().role));
+  const sellerBatchSnapshots = await Promise.all(sellerUsers.map(item => (
+    getDocs(collection(db, 'users', item.id, 'labelBatches'))
+  )));
   const totals = {
     labelCount: 0,
     piecesCount: 0,
@@ -183,17 +186,19 @@ async function rebuildPublicLabelCount({ onlyIfEmpty = false } = {}) {
     meeshoOrders: 0,
     meeshoPieces: 0
   };
-  snapshot.forEach(item => {
-    const data = item.data();
-    const platform = validPlatform(data.platform);
-    const orders = wholeNumber(data.totalOrders);
-    const pieces = wholeNumber(data.totalPieces);
-    if (!orders || pieces < orders) return;
-    totals.labelCount += orders;
-    totals.piecesCount += pieces;
-    totals.batchesCount += 1;
-    totals[`${platform}Orders`] += orders;
-    totals[`${platform}Pieces`] += pieces;
+  sellerBatchSnapshots.forEach(snapshot => {
+    snapshot.forEach(item => {
+      const data = item.data();
+      const platform = validPlatform(data.platform);
+      const orders = wholeNumber(data.totalOrders);
+      const pieces = wholeNumber(data.totalPieces);
+      if (!orders || pieces < orders) return;
+      totals.labelCount += orders;
+      totals.piecesCount += pieces;
+      totals.batchesCount += 1;
+      totals[`${platform}Orders`] += orders;
+      totals[`${platform}Pieces`] += pieces;
+    });
   });
   await setDoc(usageRef, { ...totals, lastBatchId: 'admin-rebuild', rebuiltAt: Date.now(), updatedAt: Date.now() });
   if (status) status.textContent = `${formatNumber(totals.labelCount)} labels from ${formatNumber(totals.batchesCount)} batches are now included in the public total.`;
@@ -206,25 +211,12 @@ el('admin_rebuildPublicCountBtn')?.addEventListener('click', async event => {
   try {
     await rebuildPublicLabelCount();
   } catch (error) {
-    el('admin_publicCountMessage').textContent = `Could not rebuild the total: ${error.message}`;
+    el('admin_publicCountMessage').textContent = /permission|insufficient/i.test(error.message)
+      ? 'Firestore Rules are not updated. Publish the latest firestore.rules file, refresh, and try again.'
+      : `Could not rebuild the total: ${error.message}`;
   } finally {
     button.disabled = false;
   }
-});
-
-async function repairPublicLabelCountForAdmin() {
-  if (window.appState?.role !== 'platform_super_admin') return;
-  try {
-    await rebuildPublicLabelCount({ onlyIfEmpty: true });
-  } catch (error) {
-    const status = el('admin_publicCountMessage');
-    if (status) status.textContent = 'Publish the latest Firestore rules, then use Recalculate total.';
-    console.warn('The public label total could not be repaired.', error);
-  }
-}
-
-window.addEventListener('appUnlocked', () => {
-  if (window.appState?.role === 'platform_super_admin') repairPublicLabelCountForAdmin();
 });
 
 window.addEventListener('appUnlocked', watchSellerDashboard);
