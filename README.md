@@ -17,7 +17,7 @@ A browser-based seller operations workspace for preparing Flipkart and Meesho th
 - Meesho store QR links matched from “Sold By” text
 - Six-hour local recovery for generated print PDFs
 - Flipkart SKU-level settlement and product-cost analysis
-- Meesho completed-payment profit and loss from a selected order month, multiple later payment reports, and the six-month returns/RTO report, with Order/Sub Order ID matching and duplicate-payment protection
+- Meesho completed-payment profit and loss from a selected order month, multiple later payment reports, and the six-month returns/RTO report, with Order/Sub Order ID matching, duplicate-payment protection, and period ad-spend deduction
 - Order-versus-settlement reconciliation by order ID
 - Marketplace-specific master/child SKU mapping that rolls single-quantity child labels into one packing identity while preserving multi-quantity rows
 - Reusable product cost including GST, packaging, and labour/other costs saved per master SKU
@@ -28,6 +28,7 @@ A browser-based seller operations workspace for preparing Flipkart and Meesho th
 - Scheduled cleanup function that removes expired PDF objects and metadata
 - Firebase Google sign-in, subscriptions, role-based access, saved SKU costs, and admin access
 - Admin controls for adding or reducing an exact number of subscription days
+- A dedicated Super Admin session that exposes only the administration workspace
 
 ## Deploy
 
