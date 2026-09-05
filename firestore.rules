@@ -40,9 +40,45 @@ service cloud.firestore {
         .hasOnly(['email', 'name', 'photo', 'role', 'ownerUid', 'lastSignInAt']);
     }
 
+    function isCurrentSeller() {
+      return signedIn() && currentUser().role in ['seller', 'seller_owner'];
+    }
+
+    function pendingLabelBatch() {
+      return getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/labelBatches/$(request.resource.data.lastBatchId)).data;
+    }
+
+    function validPublicUsageCreate() {
+      let batch = pendingLabelBatch();
+      return isCurrentSeller()
+        && request.resource.data.keys().hasOnly(['labelCount', 'piecesCount', 'batchesCount', 'flipkartOrders', 'flipkartPieces', 'meeshoOrders', 'meeshoPieces', 'lastBatchId', 'updatedAt'])
+        && batch.ownerUid == request.auth.uid
+        && request.resource.data.labelCount == batch.totalOrders
+        && request.resource.data.piecesCount == batch.totalPieces
+        && request.resource.data.batchesCount == 1
+        && request.resource.data.flipkartOrders + request.resource.data.meeshoOrders == batch.totalOrders
+        && request.resource.data.flipkartPieces + request.resource.data.meeshoPieces == batch.totalPieces
+        && request.resource.data.updatedAt == batch.createdAt;
+    }
+
+    function validPublicUsageUpdate() {
+      let batch = pendingLabelBatch();
+      return isCurrentSeller()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['labelCount', 'piecesCount', 'batchesCount', 'flipkartOrders', 'flipkartPieces', 'meeshoOrders', 'meeshoPieces', 'lastBatchId', 'updatedAt'])
+        && batch.ownerUid == request.auth.uid
+        && request.resource.data.get('labelCount', 0) == resource.data.get('labelCount', 0) + batch.totalOrders
+        && request.resource.data.get('piecesCount', 0) == resource.data.get('piecesCount', 0) + batch.totalPieces
+        && request.resource.data.get('batchesCount', 0) == resource.data.get('batchesCount', 0) + 1
+        && request.resource.data.get('flipkartOrders', 0) + request.resource.data.get('meeshoOrders', 0) == resource.data.get('flipkartOrders', 0) + resource.data.get('meeshoOrders', 0) + batch.totalOrders
+        && request.resource.data.get('flipkartPieces', 0) + request.resource.data.get('meeshoPieces', 0) == resource.data.get('flipkartPieces', 0) + resource.data.get('meeshoPieces', 0) + batch.totalPieces
+        && request.resource.data.updatedAt == batch.createdAt;
+    }
+
     match /publicStats/{documentId} {
       allow read: if true;
-      allow write: if false;
+      allow create: if isSuperAdmin() || (documentId == 'usage' && validPublicUsageCreate());
+      allow update: if isSuperAdmin() || (documentId == 'usage' && validPublicUsageUpdate());
+      allow delete: if false;
     }
 
     match /appConfig/{documentId} {
@@ -80,7 +116,7 @@ service cloud.firestore {
       }
 
       match /labelBatches/{batchId} {
-        allow read: if isSeller(uid);
+        allow read: if isSeller(uid) || isSuperAdmin();
         allow create: if isSeller(uid)
           && request.resource.data.keys().hasOnly(['ownerUid', 'platform', 'format', 'totalOrders', 'totalPieces', 'createdAt'])
           && request.resource.data.ownerUid == uid
