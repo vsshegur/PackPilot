@@ -104,6 +104,7 @@ const RETURN_TYPE_TESTS = [
 const msReports = { orders: null, payments: null, returns: null };
 const msPaymentFiles = new Map();
 let msProfitItems = [];
+let msSettlementIssues = [];
 let msAdSpendManual = false;
 let msAdSpendTotal = 0;
 const msCostTimers = new Map();
@@ -633,6 +634,7 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   let pending = 0;
   let completed = 0;
   const groupedSku = new Map();
+  const settlementIssues = [];
 
   groupedOrders.forEach(order => {
     const status = order.status.toLowerCase();
@@ -643,14 +645,38 @@ el('ms_runPnlBtn').addEventListener('click', () => {
     const isCustomerReturn = !isCancelled && !isRto && Boolean(returnEntry);
     const payment = findReportEntry(msReports.payments, order.ids, orderAliasUse);
     const isCompleted = Boolean(payment?.completed) && !isCancelled;
+    const orderUnits = order.rows.reduce((sum, row) => sum + row.qty, 0) || 1;
+    const orderDate = order.rows.map(row => row.date).filter(Boolean).sort((left, right) => left - right)[0] || null;
+    const orderStatuses = [...new Set(order.rows.map(row => String(row.status || '').trim()).filter(Boolean))];
+    const orderStatus = orderStatuses.join(' · ') || 'Status unavailable';
+    const isDelivered = /\bdelivered\b|delivery complete(?:d)?/.test(status) && !/\bundelivered\b/.test(status);
+    const isZeroSettlement = isCompleted && number(payment?.amount) <= 0;
     if (!isCancelled) dispatched += 1;
     if (isCancelled) cancelled += 1;
     if (isRto) rto += 1;
     if (isCustomerReturn) customerReturn += 1;
     if (!isCancelled && !isRto && !isCustomerReturn && !isCompleted) pending += 1;
+    if (!isCancelled && !isRto && !isCustomerReturn && (!isCompleted || isZeroSettlement)) {
+      const masterSkus = [...new Set(order.rows.map(row => (
+        typeof window.resolveMasterSku === 'function' ? window.resolveMasterSku('meesho', row.sku) : row.sku
+      )).filter(Boolean))];
+      settlementIssues.push({
+        orderId: order.id,
+        orderDate,
+        masterSkus,
+        units: orderUnits,
+        orderStatus,
+        paymentStatus: isZeroSettlement
+          ? 'Zero or negative settlement'
+          : payment
+            ? (payment.statusText || 'Payment not completed')
+            : (isDelivered ? 'Delivered — payment not found' : 'No completed payment found'),
+        amount: number(payment?.amount),
+        ageDays: orderDate ? Math.max(0, Math.floor((Date.now() - orderDate.getTime()) / 86400000)) : 0
+      });
+    }
     if (!isCompleted) return;
     completed += 1;
-    const orderUnits = order.rows.reduce((sum, row) => sum + row.qty, 0) || 1;
     order.rows.forEach(row => {
       const master = typeof window.resolveMasterSku === 'function' ? window.resolveMasterSku('meesho', row.sku) : row.sku;
       const item = groupedSku.get(master) || { master, childSkus: new Set(), units: 0, deliveredUnits: 0, settlement: 0, costs: skuCosts(row.sku) };
@@ -666,12 +692,15 @@ el('ms_runPnlBtn').addEventListener('click', () => {
   allocateMeeshoAdSpend(msProfitItems, msAdSpendTotal);
   msProfitItems.forEach(recalculateMeeshoItem);
   msProfitItems.sort((a, b) => meeshoUnitCost(a.costs) <= 0 && meeshoUnitCost(b.costs) > 0 ? -1 : b.profit - a.profit);
+  msSettlementIssues = settlementIssues.sort((a, b) => b.ageDays - a.ageDays || String(a.orderId).localeCompare(String(b.orderId)));
   renderMeeshoPnl(msProfitItems);
+  renderMeeshoSettlementIssues(msSettlementIssues);
   el('ms_kpiDispatched').textContent = dispatched.toLocaleString('en-IN');
   el('ms_kpiCancelled').textContent = cancelled.toLocaleString('en-IN');
   el('ms_kpiRto').textContent = rto.toLocaleString('en-IN');
   el('ms_kpiReturns').textContent = customerReturn.toLocaleString('en-IN');
   el('ms_kpiPending').textContent = pending.toLocaleString('en-IN');
+  el('ms_kpiMissingSettlements').textContent = msSettlementIssues.length.toLocaleString('en-IN');
   el('ms_periodLabel').textContent = `${from.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} — ${to.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
   el('ms_completedHeadline').textContent = `${completed.toLocaleString('en-IN')} completed-payment ${completed === 1 ? 'order' : 'orders'} used for profit`;
   const paymentFileCount = msReports.payments.fileCount || 1;
@@ -711,6 +740,8 @@ function meeshoTotalCostInput(item) {
     recalculateMeeshoItem(item);
     item.ui.profit.textContent = money(item.profit);
     item.ui.profit.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
+    item.ui.unitProfit.textContent = money(item.units ? item.profit / item.units : 0);
+    item.ui.unitProfit.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     item.ui.row.classList.toggle('sku-row--missing', totalCost <= 0);
     updateMeeshoTotals();
     clearTimeout(msCostTimers.get(item.master));
@@ -734,7 +765,7 @@ function renderMeeshoPnl(items) {
   if (!items.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.textContent = 'No completed-payment orders were found in this period. Check the payment report or choose an older month.';
     row.appendChild(cell);
     body.appendChild(row);
@@ -749,6 +780,7 @@ function renderMeeshoPnl(items) {
     const settlementCell = document.createElement('td');
     const adsCell = document.createElement('td');
     const totalCostCell = document.createElement('td');
+    const unitProfitCell = document.createElement('td');
     const profitCell = document.createElement('td');
     masterCell.textContent = item.master;
     masterCell.className = 'sku-id';
@@ -762,15 +794,81 @@ function renderMeeshoPnl(items) {
     unitsCell.className = settlementCell.className = adsCell.className = 'number';
     totalCostCell.appendChild(meeshoTotalCostInput(item));
     totalCostCell.className = 'number';
+    unitProfitCell.textContent = money(item.units ? item.profit / item.units : 0);
+    unitProfitCell.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
     profitCell.textContent = money(item.profit);
     profitCell.className = `number ${item.profit >= 0 ? 'positive' : 'negative'}`;
-    item.ui = { row, profit: profitCell };
+    item.ui = { row, profit: profitCell, unitProfit: unitProfitCell };
     row.classList.toggle('sku-row--missing', meeshoUnitCost(item.costs) <= 0);
-    row.append(masterCell, childrenCell, unitsCell, settlementCell, adsCell, totalCostCell, profitCell);
+    row.append(masterCell, childrenCell, unitsCell, settlementCell, adsCell, totalCostCell, unitProfitCell, profitCell);
     body.appendChild(row);
   });
   updateMeeshoTotals();
 }
+
+function renderMeeshoSettlementIssues(issues) {
+  const body = el('ms_missingSettlementBody');
+  body.replaceChildren();
+  el('ms_exportMissingBtn').disabled = !issues.length;
+  if (!issues.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 8;
+    cell.textContent = 'No missing or zero-value settlements were found for the selected period.';
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+
+  issues.forEach(issue => {
+    const row = document.createElement('tr');
+    const values = [
+      issue.orderId,
+      issue.orderDate ? issue.orderDate.toLocaleDateString('en-IN') : '—',
+      issue.masterSkus.join(' + ') || '—',
+      number(issue.units).toLocaleString('en-IN', { maximumFractionDigits: 2 }),
+      issue.orderStatus,
+      issue.paymentStatus,
+      money(issue.amount),
+      `${issue.ageDays} days`
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      if ([3, 6, 7].includes(index)) cell.className = 'number';
+      row.appendChild(cell);
+    });
+    body.appendChild(row);
+  });
+}
+
+function meeshoCsvCell(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+el('ms_exportMissingBtn').addEventListener('click', () => {
+  if (!msSettlementIssues.length) return;
+  const headers = ['Order ID', 'Order date', 'Master SKU', 'Quantity', 'Order status', 'Payment status', 'Amount found', 'Order age days'];
+  const rows = msSettlementIssues.map(issue => [
+    issue.orderId,
+    issue.orderDate ? inputDate(issue.orderDate) : '',
+    issue.masterSkus.join(' + '),
+    issue.units,
+    issue.orderStatus,
+    issue.paymentStatus,
+    issue.amount,
+    issue.ageDays
+  ]);
+  const csv = [headers, ...rows].map(row => row.map(meeshoCsvCell).join(',')).join('\n');
+  const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `meesho-missing-settlements-${el('ms_fromDate').value}-to-${el('ms_toDate').value}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+});
 
 function updateMeeshoTotals() {
   const totals = msProfitItems.reduce((sum, item) => ({
