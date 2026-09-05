@@ -24,8 +24,21 @@ function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function firestoreString(fields: Record<string, { stringValue?: string }> | undefined, key: string) {
+type FirestoreValue = {
+  stringValue?: string;
+  integerValue?: string;
+  doubleValue?: number;
+  booleanValue?: boolean;
+};
+
+function firestoreString(fields: Record<string, FirestoreValue> | undefined, key: string) {
   return String(fields?.[key]?.stringValue || '');
+}
+
+function firestoreNumber(fields: Record<string, FirestoreValue> | undefined, key: string) {
+  const value = fields?.[key];
+  const parsed = Number(value?.integerValue ?? value?.doubleValue ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function hasAcceptedManagerInvite(
@@ -41,11 +54,23 @@ async function hasAcceptedManagerInvite(
   if (response.status === 404 || response.status === 403) return false;
   if (!response.ok) throw new Error('The manager invitation could not be verified with Firebase.');
   const document = await response.json();
-  const fields = document?.fields as Record<string, { stringValue?: string }> | undefined;
+  const fields = document?.fields as Record<string, FirestoreValue> | undefined;
   return firestoreString(fields, 'ownerUid') === sellerUid
     && firestoreString(fields, 'managerEmail') === managerEmail
     && firestoreString(fields, 'status') === 'accepted'
     && (!acceptedUid || firestoreString(fields, 'acceptedUid') === acceptedUid);
+}
+
+async function hasActiveSellerPlan(request: Request, sellerUid: string) {
+  if (!firebaseProjectId || !sellerUid) return false;
+  const authorization = request.headers.get('authorization') || '';
+  const path = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/users/${encodeURIComponent(sellerUid)}`;
+  const response = await fetch(path, { headers: { Authorization: authorization } });
+  if (response.status === 404 || response.status === 403) return false;
+  if (!response.ok) throw new Error('The Seller subscription could not be verified with Firebase.');
+  const document = await response.json();
+  const fields = document?.fields as Record<string, FirestoreValue> | undefined;
+  return fields?.isActive?.booleanValue === true && firestoreNumber(fields, 'expiresAt') > Date.now();
 }
 
 async function canReadSeller(request: Request, user: FirebaseUser, sellerUid: string) {
@@ -89,6 +114,13 @@ Deno.serve(async request => {
     const action = String(input.action || '');
     const sellerUid = String(input.sellerUid || '');
     if (!sellerUid) return jsonResponse({ error: 'Seller workspace is missing.' }, 400, cors);
+    const activeSellerPlan = await hasActiveSellerPlan(request, sellerUid);
+    if (!activeSellerPlan) {
+      const message = user.uid === sellerUid
+        ? 'Your subscription has expired. Contact PackPilot to renew it.'
+        : "The Seller's subscription has expired. Contact the Seller to renew it.";
+      return jsonResponse({ error: message }, 403, cors);
+    }
 
     if (action === 'manager-accept') {
       const accepted = await hasAcceptedManagerInvite(request, sellerUid, user.email, user.uid);
