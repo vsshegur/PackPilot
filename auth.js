@@ -334,6 +334,7 @@ async function loadUserMemory(user) {
 async function handleSignedInUser(user) {
   el('authWarning').classList.add('hidden');
   el('authFeatures').classList.add('hidden');
+  el('expiredWarning').classList.add('hidden');
 
   const userRef = doc(db, 'users', user.uid);
   const emailKey = String(user.email || '').trim().toLowerCase();
@@ -452,12 +453,20 @@ async function handleSignedInUser(user) {
   const expiry = Number(accessData.expiresAt) || 0;
   const daysLeft = Math.max(0, Math.ceil((expiry - Date.now()) / (1000 * 60 * 60 * 24)));
   const isExpired = !isAdmin && (!accessData.isActive || expiry <= Date.now());
+  const managerUsesSellerPlan = userData.role === 'operations_manager';
 
   window.appState.userPlan = {
-    planType: isAdmin ? 'Super Admin' : (userData.role === 'operations_manager' ? 'Operations Manager' : (accessData.planType || 'Seller')),
+    planType: isAdmin ? 'Super Admin' : (managerUsesSellerPlan ? 'Covered by Seller' : (accessData.planType || 'Seller')),
     daysLeft: isAdmin ? 'Lifetime access' : `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left`
   };
   el('userPlan').textContent = `${window.appState.userPlan.planType} · ${window.appState.userPlan.daysLeft}`;
+
+  el('expiredPlanLabel').textContent = managerUsesSellerPlan ? 'Seller plan paused' : 'Plan paused';
+  el('expiredTitle').textContent = managerUsesSellerPlan ? "Your Seller's subscription has expired" : 'Your access has expired';
+  el('expiredMessage').textContent = managerUsesSellerPlan
+    ? `Contact ${window.appState.ownerEmail || 'your Seller'} to renew the subscription. Your Operations Manager account does not need a separate plan.`
+    : 'Renew your plan to continue preparing labels and profit reports.';
+  el('expiredRenewBtn').classList.toggle('hidden', managerUsesSellerPlan);
 
   el('adminToggleBtn').classList.add('hidden');
 
@@ -768,10 +777,14 @@ async function loadAdminUsers() {
       return;
     }
 
-    snapshot.forEach(userDoc => {
-      const data = userDoc.data();
-      const uid = userDoc.id;
-      const expiry = Number(data.expiresAt) || 0;
+    const users = snapshot.docs.map(userDoc => ({ uid: userDoc.id, data: userDoc.data() }));
+    const usersByUid = new Map(users.map(item => [item.uid, item.data]));
+
+    users.forEach(({ uid, data }) => {
+      const isManager = data.role === 'operations_manager';
+      const owner = isManager ? usersByUid.get(data.ownerUid) : null;
+      const effectivePlan = owner || data;
+      const expiry = Number(effectivePlan.expiresAt) || 0;
       const daysLeft = Math.max(0, Math.ceil((expiry - Date.now()) / (1000 * 60 * 60 * 24)));
       const isAdmin = data.role === 'platform_super_admin' || data.role === 'admin';
       const row = document.createElement('tr');
@@ -797,13 +810,17 @@ async function loadAdminUsers() {
       roleCell.innerHTML = `<span class="status-badge ${isAdmin ? 'status-badge--brand' : (data.role === 'operations_manager' ? 'status-badge--pink' : '')}">${roleLabel}</span>`;
       const planCell = document.createElement('td');
       const planBadge = document.createElement('span');
-      planBadge.className = `status-badge ${data.planType === 'Paid Plan' ? 'status-badge--success' : 'status-badge--warning'}`;
-      planBadge.textContent = data.planType || 'Free Trial';
+      planBadge.className = `status-badge ${isManager ? 'status-badge--pink' : (data.planType === 'Paid Plan' ? 'status-badge--success' : 'status-badge--warning')}`;
+      planBadge.textContent = isManager ? 'Under Seller' : (data.planType || 'Free Trial');
       planCell.appendChild(planBadge);
       const accessCell = document.createElement('td');
-      accessCell.textContent = isAdmin ? 'Lifetime' : `${daysLeft} days`;
+      accessCell.textContent = isAdmin
+        ? 'Lifetime'
+        : isManager
+          ? (owner ? `${daysLeft} days · ${owner.email || 'assigned Seller'}` : 'Assigned Seller unavailable')
+          : `${daysLeft} days`;
       const actionCell = document.createElement('td');
-      if (!isAdmin) {
+      if (!isAdmin && !isManager) {
         const adjuster = document.createElement('div');
         const daysInput = document.createElement('input');
         const apply = document.createElement('button');
@@ -824,6 +841,8 @@ async function loadAdminUsers() {
         });
         adjuster.append(daysInput, apply);
         actionCell.appendChild(adjuster);
+      } else if (isManager) {
+        actionCell.textContent = 'Adjust Seller plan';
       }
       row.append(userCell, roleCell, planCell, accessCell, actionCell);
       tbody.appendChild(row);
