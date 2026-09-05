@@ -188,7 +188,7 @@
               <div class="role-grid">
                 <article><span>01</span><h3>Platform Super Admin</h3><p>Manage users, subscriptions and signed day adjustments across the platform.</p><small>Platform control</small></article>
                 <article class="role-card--accent"><span>02</span><h3>Seller</h3><p>Open a private dashboard, generate labels, run business tools, save cloud PDFs, manage defaults and invite operations staff.</p><small>Private seller workspace</small></article>
-                <article><span>03</span><h3>Operations Manager</h3><p>Accept a Seller's invitation, then open only the ready-to-print PDFs that Seller explicitly shared. Existing Seller accounts are never converted without consent.</p><small>PDF-only access</small></article>
+                <article><span>03</span><h3>Operations Manager</h3><p>Accept a Seller's invitation, then open only the ready-to-print PDFs that Seller explicitly shared. No separate plan is required—the manager works under the Seller's active subscription.</p><small>PDF-only access</small></article>
               </div>
             </section>
 
@@ -204,7 +204,7 @@
           </div>
 
           <div id="expiredWarning" class="expired-panel hidden">
-            <div class="expired-icon">!</div><span>Plan paused</span><h2>Your access has expired</h2><p>Renew your plan to continue preparing labels and profit reports.</p><a href="https://wa.me/919970836509" target="_blank" rel="noreferrer" class="button button--success button--large">Renew on WhatsApp</a><button id="expiredLogoutBtn" class="text-button" type="button">Use another account</button>
+            <div class="expired-icon">!</div><span id="expiredPlanLabel">Plan paused</span><h2 id="expiredTitle">Your access has expired</h2><p id="expiredMessage">Renew your plan to continue preparing labels and profit reports.</p><a id="expiredRenewBtn" href="https://wa.me/919970836509" target="_blank" rel="noreferrer" class="button button--success button--large">Renew on WhatsApp</a><button id="expiredLogoutBtn" class="text-button" type="button">Use another account</button>
           </div>
         </section>
 
@@ -351,7 +351,7 @@
               <article class="order-state--missing"><span>Settlement issues</span><strong id="ms_kpiMissingSettlements">0</strong></article>
             </div>
             <div class="kpi-grid ms-finance-kpis"><article><span>Completed units</span><strong id="ms_kpiUnits">0</strong><small>Paid orders only</small></article><article><span>Final settlement</span><strong id="ms_kpiSettlement">₹0</strong><small>Completed payment rows</small></article><article><span>Total operating cost</span><strong id="ms_kpiCost">₹0</strong><small>All-in unit cost × paid units</small></article><article class="kpi-card--ads"><span>Ads spend</span><strong id="ms_kpiAds">₹0</strong><small>Deducted from profit</small></article><article class="kpi-card--meesho"><span>Estimated profit</span><strong id="ms_kpiProfit">₹0</strong><small>After operating and ads costs</small></article></div>
-            <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Master SKU profit breakdown</h3><p>Enter one total cost per unit, including product cost, GST, packaging, labour and other expenses. Existing saved cost parts are combined automatically.</p></div></div><div class="table-scroll"><table class="ms-profit-table"><thead><tr><th>Master SKU</th><th>Child SKUs found</th><th class="number">Paid units</th><th class="number">Settlement</th><th class="number">Ads share</th><th class="number">Total cost / unit</th><th class="number">Profit / unit</th><th class="number">Total profit</th></tr></thead><tbody id="ms_pnlBody"></tbody></table></div></section>
+            <section class="panel table-panel"><div class="table-panel__heading"><div><h3>Master SKU profit breakdown</h3><p>Enter one total cost per unit, including product cost, GST, packaging, labour and other expenses. It is saved automatically only to this Seller account and reused in future Meesho reports.</p></div></div><div class="table-scroll"><table class="ms-profit-table"><thead><tr><th>Master SKU</th><th>Child SKUs found</th><th class="number">Paid units</th><th class="number">Settlement</th><th class="number">Ads share</th><th class="number">Total cost / unit</th><th class="number">Profit / unit</th><th class="number">Total profit</th></tr></thead><tbody id="ms_pnlBody"></tbody></table></div></section>
             <section class="panel table-panel"><div class="table-panel__heading table-panel__heading--actions"><div><h3>Missing settlement tracker</h3><p>Review orders without a completed payment match and completed rows with a zero or negative settlement.</p></div><button id="ms_exportMissingBtn" class="button button--secondary" type="button" disabled>Export CSV</button></div><div class="table-scroll"><table class="ms-missing-table"><thead><tr><th>Order ID</th><th>Order date</th><th>Master SKU</th><th class="number">Qty</th><th>Order status</th><th>Payment status</th><th class="number">Amount found</th><th class="number">Order age</th></tr></thead><tbody id="ms_missingSettlementBody"></tbody></table></div></section>
           </div>
         </section>
