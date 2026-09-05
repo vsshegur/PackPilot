@@ -69,7 +69,7 @@ async function lc_loadDefaultLogo() {
 }
 
 window.addEventListener('appUnlocked', () => {
-    if (window.appState.role === 'operations_manager') return;
+    if (window.appState.role !== 'seller') return;
     if (!lc_initialized) {
         lc_setPlatform('flipkart');
         lc_initialized = true;
