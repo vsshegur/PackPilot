@@ -30,6 +30,16 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/managerInvites/$(email())).data.acceptedUid == request.auth.uid;
     }
 
+    function changesOnlyProfileFields() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['email', 'name', 'photo', 'lastSignInAt']);
+    }
+
+    function changesOnlyProfileAndRoleFields() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['email', 'name', 'photo', 'role', 'ownerUid', 'lastSignInAt']);
+    }
+
     match /publicStats/{documentId} {
       allow read: if true;
       allow write: if false;
@@ -42,16 +52,23 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow create: if signedIn() && request.auth.uid == uid && (
-        request.resource.data.role in ['seller', 'seller_owner']
+        (request.resource.data.role in ['seller', 'seller_owner']
+          && request.resource.data.ownerUid == uid
+          && request.resource.data.planType == 'Free Trial'
+          && request.resource.data.isActive == true
+          && request.resource.data.createdAt >= request.time.toMillis() - 300000
+          && request.resource.data.createdAt <= request.time.toMillis() + 300000
+          && request.resource.data.expiresAt > request.time.toMillis()
+          && request.resource.data.expiresAt <= request.time.toMillis() + 173100000)
         || (request.resource.data.role == 'operations_manager' && isInvitedManager(request.resource.data.ownerUid))
         || (email() == 'vsshegur@gmail.com' && request.resource.data.role == 'platform_super_admin')
       );
       allow read: if signedIn() && (request.auth.uid == uid || isInvitedManager(uid) || isSuperAdmin());
       allow update: if isSuperAdmin()
-        || (signedIn() && request.auth.uid == uid && request.resource.data.role == resource.data.role && request.resource.data.ownerUid == resource.data.ownerUid)
-        || (signedIn() && request.auth.uid == uid && resource.data.role in ['user', 'seller', 'seller_owner'] && request.resource.data.role in ['seller', 'seller_owner'] && request.resource.data.ownerUid == uid)
-        || (signedIn() && request.auth.uid == uid && request.resource.data.role == 'operations_manager' && isInvitedManager(request.resource.data.ownerUid))
-        || (signedIn() && request.auth.uid == uid && resource.data.role == 'operations_manager' && request.resource.data.role in ['seller', 'seller_owner'] && request.resource.data.ownerUid == uid && !isInvitedManager(resource.data.ownerUid));
+        || (signedIn() && request.auth.uid == uid && request.resource.data.role == resource.data.role && request.resource.data.ownerUid == resource.data.ownerUid && changesOnlyProfileFields())
+        || (signedIn() && request.auth.uid == uid && resource.data.role in ['user', 'seller', 'seller_owner'] && request.resource.data.role in ['seller', 'seller_owner'] && request.resource.data.ownerUid == uid && changesOnlyProfileAndRoleFields())
+        || (signedIn() && request.auth.uid == uid && request.resource.data.role == 'operations_manager' && isInvitedManager(request.resource.data.ownerUid) && changesOnlyProfileAndRoleFields())
+        || (signedIn() && request.auth.uid == uid && resource.data.role == 'operations_manager' && request.resource.data.role in ['seller', 'seller_owner'] && request.resource.data.ownerUid == uid && !isInvitedManager(resource.data.ownerUid) && changesOnlyProfileAndRoleFields());
 
       match /pdfs/{pdfId} {
         allow read: if signedIn() && (isSeller(uid) || isInvitedManager(uid));
