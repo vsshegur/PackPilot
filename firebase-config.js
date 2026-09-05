@@ -20,6 +20,9 @@ if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
     auth = getAuth(app);
     db = getFirestore(app);
     provider = new GoogleAuthProvider();
+    // Always show Google's account picker. Once the user chooses an account,
+    // Firebase completes sign-in without an additional in-app login step.
+    provider.setCustomParameters({ prompt: "select_account" });
 } else {
     console.error("Firebase API Key is missing! Please update firebase-config.js");
 }
