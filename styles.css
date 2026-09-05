@@ -3430,6 +3430,9 @@ body:has(#authPanel:not(.hidden)) .topbar .mobile-brand {
 body.operation-manager-mode .content { width: min(100%, 1040px); }
 body.operation-manager-mode .topbar { padding-inline: clamp(18px, 5vw, 70px); }
 body.operation-manager-mode #cloudLibraryWorkspace { max-width: 960px; margin-inline: auto; }
+body.platform-admin-mode .content { width: min(100%, 1180px); }
+body.platform-admin-mode .topbar { padding-inline: clamp(18px, 5vw, 70px); }
+body.platform-admin-mode #adminPanel { max-width: 1100px; margin-inline: auto; }
 
 /* Private Seller dashboard */
 .dashboard-heading { align-items: center; }
@@ -3626,6 +3629,29 @@ body.operation-manager-mode #cloudLibraryWorkspace { max-width: 960px; margin-in
   font-weight: 700;
 }
 
+.ms-ads-control {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.ms-ads-control p {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  border-radius: 12px;
+  background: rgba(244, 51, 151, .07);
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.45;
+}
+
 .ms-report-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3675,7 +3701,10 @@ body.operation-manager-mode #cloudLibraryWorkspace { max-width: 960px; margin-in
 .order-state-grid span { color: var(--muted); font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
 .order-state-grid strong { margin-top: 7px; font: 800 1.55rem "Manrope", sans-serif; }
 .order-state--pending { border-color: rgba(220, 104, 3, .3) !important; background: var(--warning-soft) !important; }
-.ms-profit-table { min-width: 1040px; }
+.ms-finance-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.kpi-card--ads { border-color: rgba(244, 51, 151, .24) !important; background: linear-gradient(140deg, rgba(244, 51, 151, .08), var(--surface)) !important; }
+.kpi-card--ads > strong { color: #d61f7d !important; }
+.ms-profit-table { min-width: 1160px; }
 
 /* Marketplace-specific master SKU editor */
 .sku-example {
@@ -3716,6 +3745,7 @@ body.operation-manager-mode #cloudLibraryWorkspace { max-width: 960px; margin-in
   .order-state-grid { grid-template-columns: repeat(3, 1fr); }
   .sku-cost-grid { grid-template-columns: 1fr 1fr; }
   .dashboard-kpi-grid { grid-template-columns: 1fr 1fr; }
+  .ms-finance-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 820px) {
@@ -3733,9 +3763,10 @@ body.operation-manager-mode #cloudLibraryWorkspace { max-width: 960px; margin-in
   .recent-output-heading > div { align-items: flex-start; }
   .invite-form { width: 100%; align-items: stretch; flex-direction: column; }
   .invite-form .field { min-width: 0; }
-  .date-range, .ms-report-grid, .sku-master-form { grid-template-columns: 1fr; }
+  .date-range, .ms-report-grid, .sku-master-form, .ms-ads-control { grid-template-columns: 1fr; }
   .field--children, .sku-cost-grid, .sku-save-row { grid-column: auto; }
   .order-state-grid { grid-template-columns: 1fr 1fr; }
+  .ms-finance-kpis { grid-template-columns: 1fr 1fr; }
   .ms-run-row, .period-summary { align-items: stretch; flex-direction: column; }
   .market-totals, .dashboard-lower-grid { grid-template-columns: 1fr; }
 }
@@ -3748,6 +3779,7 @@ body.operation-manager-mode #cloudLibraryWorkspace { max-width: 960px; margin-in
   .landing-actions .button { width: 100%; }
   .landing-hero .auth-proof { align-items: stretch; flex-direction: column; }
   .landing-hero .auth-proof span { text-align: left; }
+  .ms-finance-kpis { grid-template-columns: 1fr; }
   .feature-grid { grid-template-columns: 1fr; }
   .feature-card { min-height: 0; padding: 24px; }
   .marketplace-band article { flex-direction: column; }
