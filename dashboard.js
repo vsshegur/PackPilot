@@ -1,9 +1,14 @@
 import { db } from './firebase-config.js';
 import {
-  addDoc,
   collection,
+  collectionGroup,
   doc,
-  onSnapshot
+  getDoc,
+  getDocs,
+  increment,
+  onSnapshot,
+  setDoc,
+  writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 const el = id => document.getElementById(id);
@@ -132,15 +137,95 @@ window.recordLabelBatch = async payload => {
   const totalOrders = Math.min(5000, wholeNumber(payload.totalOrders));
   const totalPieces = Math.min(50000, wholeNumber(payload.totalPieces));
   if (!totalOrders || totalPieces < totalOrders) return;
-  await addDoc(collection(db, 'users', user.uid, 'labelBatches'), {
+  const batchRef = doc(collection(db, 'users', user.uid, 'labelBatches'));
+  const platform = validPlatform(payload.platform);
+  const createdAt = Date.now();
+  const batch = writeBatch(db);
+  batch.set(batchRef, {
     ownerUid: user.uid,
-    platform: validPlatform(payload.platform),
+    platform,
     format: String(payload.format || '').slice(0, 80),
     totalOrders,
     totalPieces,
-    createdAt: Date.now()
+    createdAt
   });
+  batch.set(doc(db, 'publicStats', 'usage'), {
+    labelCount: increment(totalOrders),
+    piecesCount: increment(totalPieces),
+    batchesCount: increment(1),
+    flipkartOrders: increment(platform === 'flipkart' ? totalOrders : 0),
+    flipkartPieces: increment(platform === 'flipkart' ? totalPieces : 0),
+    meeshoOrders: increment(platform === 'meesho' ? totalOrders : 0),
+    meeshoPieces: increment(platform === 'meesho' ? totalPieces : 0),
+    lastBatchId: batchRef.id,
+    updatedAt: createdAt
+  }, { merge: true });
+  await batch.commit();
 };
+
+async function rebuildPublicLabelCount({ onlyIfEmpty = false } = {}) {
+  if (!db || window.appState?.role !== 'platform_super_admin') return null;
+  const status = el('admin_publicCountMessage');
+  const usageRef = doc(db, 'publicStats', 'usage');
+  if (onlyIfEmpty) {
+    const existing = await getDoc(usageRef);
+    if (existing.exists() && wholeNumber(existing.data().labelCount) > 0) return existing.data();
+  }
+
+  if (status) status.textContent = 'Adding all sellers’ saved label batches…';
+  const snapshot = await getDocs(collectionGroup(db, 'labelBatches'));
+  const totals = {
+    labelCount: 0,
+    piecesCount: 0,
+    batchesCount: 0,
+    flipkartOrders: 0,
+    flipkartPieces: 0,
+    meeshoOrders: 0,
+    meeshoPieces: 0
+  };
+  snapshot.forEach(item => {
+    const data = item.data();
+    const platform = validPlatform(data.platform);
+    const orders = wholeNumber(data.totalOrders);
+    const pieces = wholeNumber(data.totalPieces);
+    if (!orders || pieces < orders) return;
+    totals.labelCount += orders;
+    totals.piecesCount += pieces;
+    totals.batchesCount += 1;
+    totals[`${platform}Orders`] += orders;
+    totals[`${platform}Pieces`] += pieces;
+  });
+  await setDoc(usageRef, { ...totals, lastBatchId: 'admin-rebuild', rebuiltAt: Date.now(), updatedAt: Date.now() });
+  if (status) status.textContent = `${formatNumber(totals.labelCount)} labels from ${formatNumber(totals.batchesCount)} batches are now included in the public total.`;
+  return totals;
+}
+
+el('admin_rebuildPublicCountBtn')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await rebuildPublicLabelCount();
+  } catch (error) {
+    el('admin_publicCountMessage').textContent = `Could not rebuild the total: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+async function repairPublicLabelCountForAdmin() {
+  if (window.appState?.role !== 'platform_super_admin') return;
+  try {
+    await rebuildPublicLabelCount({ onlyIfEmpty: true });
+  } catch (error) {
+    const status = el('admin_publicCountMessage');
+    if (status) status.textContent = 'Publish the latest Firestore rules, then use Recalculate total.';
+    console.warn('The public label total could not be repaired.', error);
+  }
+}
+
+window.addEventListener('appUnlocked', () => {
+  if (window.appState?.role === 'platform_super_admin') repairPublicLabelCountForAdmin();
+});
 
 window.addEventListener('appUnlocked', watchSellerDashboard);
 window.addEventListener('workspaceChanged', event => {
