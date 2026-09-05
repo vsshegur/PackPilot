@@ -122,7 +122,7 @@ function publishRecords() {
 
 async function loadSkuMaster() {
   const user = window.appState?.currentUser;
-  if (!user || window.appState.role === 'operations_manager' || !db) return;
+  if (!user || window.appState.role !== 'seller' || !db) return;
   try {
     const snapshot = await getDocs(collection(db, 'users', user.uid, 'skuMaster'));
     records = snapshot.docs
